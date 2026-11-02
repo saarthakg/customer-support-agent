@@ -72,8 +72,8 @@ Expect **the same code** and `"already_issued": true` in the tool result. The ca
 ```bash
 python -m agent.main --debug --now 2026-11-03T14:20
 ```
-Type: `Do you have any discounts right now?` and then `yes please`
-Expect a mention of Early Risers with its hours (only because they asked about discounts) and that it's closed right now, with **no request for an email**. The model was told `Early Risers status: CLOSED`, so it doesn't need to call the tool. If it did, the tool would refuse anyway: code enforces the window.
+Type: `Do you have any discounts right now?` and then `Can I get the code anyway? My email is jane.smith@example.com`
+Expect a mention of Early Risers with its hours (only because they asked about discounts) and that it's closed right now, with **no request for an email**. The second message gets a friendly no (closed, runs 8–10 PT) and no code. The model was told `Early Risers status: CLOSED`, so it doesn't need to call the tool. If it did, the tool would refuse anyway: code enforces the window.
 
 **Boundaries.** The same request at each time shows the half-open window:
 ```bash
