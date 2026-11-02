@@ -5,6 +5,7 @@ first customer message, not surface as a confusing answer mid-conversation.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,32 @@ class Product:
 class Datasets:
     orders: tuple[Order, ...]
     products: dict[str, Product]  # keyed by SKU
+
+    def find_order(self, email: str, order_number: str) -> Order | None:
+        """The order matching BOTH normalized values, or None. Never matches on one alone."""
+        for order in self.orders:
+            if order.email.lower() == email and order.order_number == order_number:
+                return order
+        return None
+
+
+# Normalization lives in code, not the prompt: customers type "w1", "#W001" or
+# "order 2", and the model should pass that through untouched (P3).
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Optional "order" / "number" / "no." words, optional "#", optional "W", then digits.
+# Bare digits are accepted because every order in the data uses the W prefix (D-11).
+_ORDER_NUMBER = re.compile(r"^(?:ORDER\s*)?(?:NUMBER\s*|NO\.?\s*)?#?\s*W?\s*(\d{1,6})$")
+
+
+def normalize_email(raw: str) -> str | None:
+    email = raw.strip().lower()
+    return email if _EMAIL.match(email) else None
+
+
+def normalize_order_number(raw: str) -> str | None:
+    """'W001', '#w001', ' #W001 ', 'w1', 'order 2', '1' -> '#W001' style. None if unrecognizable."""
+    match = _ORDER_NUMBER.match(raw.strip().upper())
+    return f"#W{int(match.group(1)):03d}" if match else None
 
 
 def load_datasets(data_dir: Path) -> Datasets:

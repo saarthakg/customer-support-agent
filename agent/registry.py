@@ -2,11 +2,14 @@
 
 A Skill bundles a journey spec (prompt text) with the tools that implement it.
 To add a feature: write `agent/skills/<name>.py` exposing `build(deps) -> Skill`,
-then add it to SKILL_BUILDERS below. The loop and prompt assembly never change.
+then add it to SKILL_BUILDERS in `agent/skills/__init__.py`. The loop and prompt
+assembly never change.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 from agent.data import Datasets
 
@@ -37,13 +40,15 @@ class Deps:
     """Everything a skill may depend on, passed in explicitly so tests can substitute fakes."""
 
     datasets: Datasets
+    now: Callable[[], datetime]  # timezone-aware; injectable so tests and --now can control time
+    handoff_log: Path  # where escalation tickets are appended
 
 
-SKILL_BUILDERS: list[Callable[[Deps], Skill]] = []
+SkillBuilder = Callable[[Deps], Skill]
 
 
-def build_skills(deps: Deps, builders: list[Callable[[Deps], Skill]] | None = None) -> list[Skill]:
-    skills = [build(deps) for build in (SKILL_BUILDERS if builders is None else builders)]
+def build_skills(deps: Deps, builders: list[SkillBuilder]) -> list[Skill]:
+    skills = [build(deps) for build in builders]
     names = [t.name for s in skills for t in s.tools]
     duplicates = {n for n in names if names.count(n) > 1}
     if duplicates:

@@ -226,3 +226,35 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Choice:** count *rounds* containing a malformed call. The first round's error goes back as an observation and the model retries. A second malformed round ends the turn with the in-voice "please try again" fallback (`outcome: "malformed_tool_call"`), and the turn is rolled back (D-27). Business errors (`order_not_found`, `outside_promo_window`, …) don't count, because they're valid calls with an answer the model must relay.
 - **Alternative:** count individual calls, which would punish two parallel bad calls with no retry, or rely on the iteration cap.
 - **Why:** a model that fails to form a call twice in a row is unlikely to fix it on the third try. Failing fast saves latency and tokens, and it's a distinct, traceable outcome instead of a generic `loop_limit`.
+
+---
+
+## Phase 2: orders and escalation
+
+### D-40 Enabled-skill list lives in `agent/skills/__init__.py` (amends D-05) · Accepted
+- **Choice:** `SKILL_BUILDERS` moved from `registry.py` to `agent/skills/__init__.py`. `registry.py` keeps only the `Tool` / `Skill` / `Deps` types and `build_skills()`.
+- **Why:** skills import their types from `registry.py`, so `registry.py` importing the skills would be circular. The extension story is unchanged: one new module plus one line, in the package where skills live.
+
+### D-41 Normalization and identity match live in the data layer · Accepted
+- **Choice:** `normalize_email`, `normalize_order_number` and `Datasets.find_order(email, order_number)` are in `data.py`, shared by the orders and escalation skills.
+- **Why:** both skills need the same definition of "this email owns this order". Two copies would drift, and a skill importing from another skill would couple them.
+
+### D-42 Lockout details · Accepted
+- Only `order_not_found` counts toward the cap. Malformed inputs (`invalid_email`, `invalid_order_number`) don't, because they reveal nothing about the data.
+- The 3rd failure itself returns `too_many_attempts`, so the agent offers escalation immediately rather than inviting a doomed 4th try.
+- The counter never resets within a session, even after a success, because "find my order, then probe others" is still enumeration. It lives on an `OrderLookup` instance built per conversation.
+
+### D-43 Escalation contract details (extends D-16) · Accepted
+- `order_number` is optional, so a customer with a returns question or no order can still be handed off. An unrecognizable value is kept verbatim on the ticket for support.
+- The tool returns only `ticket_id`. `verified` is written to the ticket but not shown to the model, so the model can't repeat it to the customer as a claim.
+- The ticket ID is `HT-` plus 6 characters from an alphabet without 0/O/1/I/L, because it gets read aloud.
+- The escalation journey uses a plain tone: no emojis, no exclamation marks.
+
+### D-44 "Ask for what's missing" wording (deviates from §3's literal "one thing at a time") · Accepted · flag for review
+- **Found:** the prompt rule "Ask for exactly what is missing, one thing at a time" made the model say "Just one at a time, please" to customers.
+- **Choice:** "Ask only for what you're missing, in one short question (e.g. if you have the order number, ask only for the email). Never ask again for something the customer already gave you, and never tell them how to pace or format their answers."
+- **Why:** §3's intent, shown by its own example, is "don't re-ask for what you have". The literal "one at a time" got echoed to customers as an instruction. With both identifiers missing, the model still tends to ask for one and then the other. That's acceptable, and it's a Phase 4 voice-tuning candidate.
+
+### D-45 Remember identifiers across a failed lookup · Accepted
+- **Found:** in the first live mismatch transcript, after `order_not_found` the model asked for the email again instead of reusing it, so the lockout was never reached.
+- **Choice:** the orders journey spec tells the model to reuse earlier identifiers when the customer corrects one ("try W003"). The scenario `order_mismatch_lockout_escalates` guards it.

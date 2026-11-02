@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 
 # Startup checks run before third-party imports so a wrong interpreter or a
 # missing virtualenv gets a one-line fix instead of a traceback.
@@ -27,6 +28,7 @@ from agent import config
 from agent.data import DataError, load_datasets
 from agent.loop import Agent, ToolCallRecord, TurnResult
 from agent.registry import Deps, build_skills
+from agent.skills import SKILL_BUILDERS
 from agent.trace import Tracer
 
 DIM, RESET = "\033[2m", "\033[0m"
@@ -50,12 +52,13 @@ def main() -> int:
         print(f"Could not load data: {e}", file=sys.stderr)
         return 1
 
+    deps = Deps(datasets=datasets, now=lambda: datetime.now(timezone.utc), handoff_log=config.HANDOFF_LOG)
     session_id = uuid.uuid4().hex[:8]
     llm = LLM()
     agent = Agent(
         llm=llm,
-        skills=build_skills(Deps(datasets=datasets)),
-        tracer=Tracer(config.LOG_DIR / "trace.jsonl", session_id),
+        skills=build_skills(deps, SKILL_BUILDERS),
+        tracer=Tracer(config.TRACE_LOG, session_id),
         on_tool_call=_print_tool_call if args.debug else None,
     )
 

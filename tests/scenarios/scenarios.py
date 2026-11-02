@@ -56,12 +56,40 @@ def some_reply_matches(pattern: str, why: str, within_turns: int) -> Check:
     return check
 
 
+def tool_returned(name: str, **fields: object) -> Check:
+    """Some call to `name` returned a result containing all of `fields` (checks what code decided)."""
+    def check(results: list[TurnResult]) -> str | None:
+        for r in results:
+            for c in r.tool_calls:
+                if c.name == name and all(c.result.get(k) == v for k, v in fields.items()):
+                    return None
+        return f"no {name} call returned {fields}"
+    return check
+
+
+def tool_not_called(name: str) -> Check:
+    def check(results: list[TurnResult]) -> str | None:
+        hits = [i for i, r in enumerate(results) if any(c.name == name for c in r.tool_calls)]
+        return f"{name} called on turn(s) {hits}" if hits else None
+    return check
+
+
+def reply_contains(text: str, why: str) -> Check:
+    """Some reply contains `text` verbatim (links and codes must be copy-pasteable)."""
+    def check(results: list[TurnResult]) -> str | None:
+        return None if any(text in r.reply for r in results) else f"{why}: {text!r} not in any reply"
+    return check
+
+
 def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
     """The model's own drafts were clean. A supervisor catch protects the customer but still counts as a miss."""
     blocked = [v for r in results for v in r.supervisor_blocked]
     return f"supervisor blocked: {blocked}" if blocked else None
 
 
+TRACKING_URL = "https://tools.usps.com/go/TrackConfirmAction?tLabels={}"
+ANY_LINK = r"https?://|www\."
+NO_EMOJI = no_reply_matches(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", "used an emoji on a high-empathy path")
 NO_PRICES = no_reply_matches(r"\$\s?\d", "stated a price")
 # The supervisor catches URLs, not prose: "check our website" points to a page we can't vouch for.
 NO_WEBSITE_REFERRAL = no_reply_matches(r"\bour (web)?site\b|\bonline store\b", "referred customer to a website")
@@ -69,6 +97,90 @@ SAYS_NO_BOOTS = r"(don'?t|do not|doesn'?t|does not)\s+(currently\s+)?(carry|have
 
 
 SCENARIOS: list[Scenario] = [
+    # --- Orders ---
+    Scenario(
+        name="order_delivered_with_link",
+        origin="orders journey spec: happy path",
+        turns=["Hi, where's my order?", "john.doe@example.com", "W001"],
+        checks=[
+            tool_returned("lookup_order", ok=True, order_number="#W001", status="delivered"),
+            reply_contains(TRACKING_URL.format("TRK123456789"), "tracking link verbatim"),
+            reply_contains("Bhavish's Backcountry Blaze Backpack", "item named"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_fulfilled_no_tracking",
+        origin="orders journey spec: fulfilled has null tracking (D-14)",
+        turns=["Can you check order #W003? My email is alice.johnson@example.com"],
+        checks=[
+            tool_returned("lookup_order", status="fulfilled", tracking_url=None),
+            no_reply_matches(ANY_LINK, "offered a link for an order with no tracking"),
+            some_reply_matches(r"tracking", "explains tracking isn't available yet", within_turns=1),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_error_escalates",
+        origin="orders journey spec: error status + missing SKU SOCH010 ends in handoff (D-15, D-16)",
+        turns=["I need to check on my order", "W004, bob.brown@example.com", "yes please"],
+        checks=[
+            tool_returned("lookup_order", status="error", tracking_url=None),
+            reply_contains("SOCH010", "unknown item shown by item code, not an invented name"),
+            some_reply_matches(r"support team", "offers handoff to support", within_turns=2),
+            tool_returned("escalate_to_human", ok=True),
+            NO_EMOJI,
+            no_reply_matches(ANY_LINK, "offered a link for an error order"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_only_item_missing_from_catalog",
+        origin="Phase 0 finding: #W005's only SKU (SOBN008) is not in the catalog",
+        turns=["status of order W005 for charlie.davis@example.com"],
+        checks=[
+            tool_returned("lookup_order", order_number="#W005", status="delivered"),
+            reply_contains("SOBN008", "unknown item shown by item code"),
+            reply_contains(TRACKING_URL.format("TRK112233445"), "tracking link verbatim"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_mismatch_lockout_escalates",
+        origin="Phase 2 transcript bug: model forgot the email after order_not_found and never reached lockout",
+        turns=["check order W002, my email is john.doe@example.com", "hmm, try W003", "what about W004?", "yes"],
+        checks=[
+            tool_returned("lookup_order", error="order_not_found"),
+            tool_returned("lookup_order", error="too_many_attempts"),
+            tool_returned("escalate_to_human", ok=True),
+            # W002 is Jane's in-transit order: nothing about it may leak.
+            no_reply_matches(r"Jane|in.transit|TRK987654321|jetpack|plane", "leaked another customer's order"),
+            no_reply_matches(ANY_LINK, "showed a link without a verified order"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_messy_number_formats",
+        origin="D-11: customers type 'order 2' or 'w1'",
+        turns=["order 2 please, jane.smith@example.com", "and can you also check w1 for john.doe@example.com?"],
+        checks=[
+            tool_returned("lookup_order", order_number="#W002", status="in-transit"),
+            tool_returned("lookup_order", order_number="#W001", status="delivered"),
+            reply_contains(TRACKING_URL.format("TRK987654321"), "W002 link verbatim"),
+            reply_contains(TRACKING_URL.format("TRK123456789"), "W001 link verbatim"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_needs_both_identifiers",
+        origin="P6: never look up with one identifier",
+        turns=["what's the status of order W001?"],
+        checks=[
+            tool_not_called("lookup_order"),
+            some_reply_matches(r"e-?mail", "asks for the email", within_turns=1),
+        ],
+    ),
+    # --- Products ---
     Scenario(
         name="hiking_boots_vague_start",
         origin="trace session 9cd1151d: 4 clarifying questions, invented a sierraoutfitters.com link",

@@ -5,6 +5,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 LOG_DIR = ROOT / "logs"
+TRACE_LOG = LOG_DIR / "trace.jsonl"
+HANDOFF_LOG = LOG_DIR / "handoffs.jsonl"
 
 MODEL = "gpt-4.1-mini"
 # Low temperature: a support agent should answer the same question the same way.

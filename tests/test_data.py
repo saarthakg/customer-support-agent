@@ -2,13 +2,7 @@ import json
 
 import pytest
 
-from agent import config
 from agent.data import ORDER_STATUSES, DataError, load_datasets
-
-
-@pytest.fixture(scope="module")
-def datasets():
-    return load_datasets(config.DATA_DIR)
 
 
 def test_ten_orders_and_ten_products(datasets):

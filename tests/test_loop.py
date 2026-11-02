@@ -1,6 +1,8 @@
 """Loop mechanics against a scripted fake model: no network, fully deterministic."""
 
 import json
+from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -91,7 +93,7 @@ def test_system_prompt_includes_each_skill_spec():
 def test_registry_rejects_duplicate_tool_names():
     builder = lambda deps: echo_skill()  # noqa: E731
     with pytest.raises(ValueError, match="duplicate"):
-        build_skills(Deps(datasets=None), builders=[builder, builder])
+        build_skills(Deps(datasets=None, now=datetime.now, handoff_log=Path("unused")), [builder, builder])
 
 
 def test_greeting_does_not_advertise_promotions():
@@ -177,3 +179,11 @@ def test_business_errors_do_not_count_as_malformed():
     not_found = echo_skill(lambda word: {"ok": False, "error": "order_not_found"})
     llm = FakeLLM(*[calls(("echo", '{"word": "x"}')) for _ in range(3)], text("Couldn't find it."))
     assert Agent(llm, skills=[not_found]).respond("go").outcome == "ok"
+
+
+def test_enabled_skills_build_with_unique_tools(deps):
+    from agent.skills import SKILL_BUILDERS
+
+    agent = Agent(FakeLLM(), skills=build_skills(deps, SKILL_BUILDERS))
+    assert {"lookup_order", "escalate_to_human"} <= agent.tools.keys()
+    assert "# Skill: Order status and tracking" in agent.messages[0]["content"]
