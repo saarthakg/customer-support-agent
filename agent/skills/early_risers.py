@@ -37,8 +37,10 @@ The tool decides eligibility; you never decide whether it's the right time.
 tell them about Early Risers ({DISCOUNT_PERCENT}% off, {WINDOW_TEXT}) and ask whether they'd like a code. \
 Don't issue it until they explicitly say yes.
 - Call issue_early_risers_code only when the customer explicitly asks for the Early Risers code or discount, \
-or explicitly says yes to your offer. You need their email: reuse it if they gave it earlier in this \
-conversation; otherwise ask for it, and only it.
+or explicitly says yes to your offer. When they do, call it IMMEDIATELY: with their email if they've given one \
+in this conversation, without one if not. Don't ask for the email first and don't check the time yourself; \
+the tool checks the window before it needs an email.
+- needs_email: it's within the window; ask for their email (only that), then call the tool again with it.
 - On success: say it's {DISCOUNT_PERCENT}% off and put the code on its own line, exactly as returned. If \
 already_issued is true, say this is the same code they were given earlier today. Don't invent an expiry date, \
 minimum spend, exclusions, or redemption steps beyond "use it at checkout".
@@ -62,11 +64,9 @@ class EarlyRisers:
         self.store = store
         self.new_code = new_code  # injectable so tests can force a collision
 
-    def issue_early_risers_code(self, email: str) -> dict:
-        normalized_email = normalize_email(email)
-        if normalized_email is None:
-            return {"ok": False, "error": "invalid_email"}
-
+    def issue_early_risers_code(self, email: str = "") -> dict:
+        # Window first: outside it the answer is "no" for everyone, so never make the customer
+        # hand over an email just to be told to come back later (D-62).
         moment = self.now()
         if not in_window(moment):
             return {
@@ -75,6 +75,11 @@ class EarlyRisers:
                 "window": WINDOW_TEXT,
                 "current_time_pt": moment.astimezone(PACIFIC).strftime("%I:%M %p PT").lstrip("0"),
             }
+        if not email.strip():
+            return {"ok": False, "error": "needs_email"}
+        normalized_email = normalize_email(email)
+        if normalized_email is None:
+            return {"ok": False, "error": "invalid_email"}
 
         # "Today" is the Pacific calendar day: the window and the idempotency key share a timezone.
         today = moment.astimezone(PACIFIC).date()
@@ -110,13 +115,19 @@ def build(deps: Deps) -> Skill:
                 description=(
                     f"Issue the customer's Early Risers {DISCOUNT_PERCENT}% discount code. Call ONLY when the "
                     "customer explicitly asks for the Early Risers code/discount, or explicitly says yes after "
-                    f"you mention it. Eligibility ({WINDOW_TEXT}) is decided by this tool; never decide it "
-                    "yourself. The same email on the same day gets the same code back."
+                    f"you mention it, and then call it right away, with or without an email. Eligibility "
+                    f"({WINDOW_TEXT}) is checked first; returns needs_email if it's within the window and no "
+                    "email was given. The same email on the same day gets the same code back."
                 ),
                 parameters={
                     "type": "object",
-                    "properties": {"email": {"type": "string", "description": "The customer's email address."}},
-                    "required": ["email"],
+                    "properties": {
+                        "email": {
+                            "type": "string",
+                            "description": "The customer's email address, if they've given one. Omit it otherwise.",
+                        }
+                    },
+                    "required": [],
                 },
                 handler=promo.issue_early_risers_code,
             ),

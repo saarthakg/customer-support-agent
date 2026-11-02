@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from agent.clock import PACIFIC, parse_now
-from agent.code_store import InMemoryCodeStore
+from agent.code_store import InMemoryCodeStore, JsonCodeStore
 from agent.skills.early_risers import CODE_PATTERN, EarlyRisers, in_window
 from agent.supervisor import BASE_PATTERNS, Supervisor
 
@@ -100,7 +100,23 @@ def test_collision_is_redrawn():
     assert promo.issue_early_risers_code(EMAIL)["code"] == "EARLYRISER-BBBBBB"
 
 
-def test_invalid_email_is_rejected_before_anything_else():
+# --- window first, then email (D-62) ---
+
+def test_outside_window_needs_no_email():
+    result = promo_at(pt(14, 20)).issue_early_risers_code()
+    assert result["error"] == "outside_promo_window" and result["current_time_pt"] == "2:20 PM PT"
+
+
+def test_outside_window_wins_even_over_a_bad_email():
+    assert promo_at(pt(7, 59)).issue_early_risers_code("jane")["error"] == "outside_promo_window"
+
+
+def test_inside_window_without_email_asks_for_it():
+    assert promo_at(pt(8, 30)).issue_early_risers_code() == {"ok": False, "error": "needs_email"}
+    assert promo_at(pt(8, 30)).issue_early_risers_code("   ") == {"ok": False, "error": "needs_email"}
+
+
+def test_inside_window_invalid_email():
     assert promo_at(pt(8, 30)).issue_early_risers_code("jane") == {"ok": False, "error": "invalid_email"}
 
 
@@ -129,3 +145,14 @@ def test_parse_now_defaults_to_pacific_and_respects_offsets():
     assert parse_now("2026-11-03T08:30") == pt(8, 30)
     assert parse_now("2026-11-03T16:30+00:00") == pt(8, 30)
     assert parse_now("2026-11-03T08:30-08:00") == pt(8, 30)
+
+
+# --- persistence (D-61) ---
+
+def test_json_store_survives_restart(tmp_path):
+    path = tmp_path / "state" / "issued_codes.json"
+    first = EarlyRisers(now=lambda: pt(8, 30), store=JsonCodeStore(path)).issue_early_risers_code(EMAIL)
+    # A new store instance on the same file is what a CLI restart looks like.
+    again = EarlyRisers(now=lambda: pt(9, 45), store=JsonCodeStore(path)).issue_early_risers_code(EMAIL)
+    assert again["code"] == first["code"] and again["already_issued"] is True
+    assert JsonCodeStore(path).exists(first["code"])

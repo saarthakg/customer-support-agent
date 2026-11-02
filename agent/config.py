@@ -7,6 +7,8 @@ DATA_DIR = ROOT / "data"
 LOG_DIR = ROOT / "logs"
 TRACE_LOG = LOG_DIR / "trace.jsonl"
 HANDOFF_LOG = LOG_DIR / "handoffs.jsonl"
+# Issued Early Risers codes; persists across restarts. Delete the folder to reset a demo.
+CODE_STORE = ROOT / "state" / "issued_codes.json"
 
 MODEL = "gpt-4.1-mini"
 # Low temperature: a support agent should answer the same question the same way.

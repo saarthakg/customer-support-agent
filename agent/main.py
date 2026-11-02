@@ -26,7 +26,7 @@ except ModuleNotFoundError as e:
 
 from agent import config
 from agent.clock import PACIFIC, fixed_clock, parse_now, system_clock
-from agent.code_store import InMemoryCodeStore
+from agent.code_store import JsonCodeStore
 from agent.data import DataError, load_datasets
 from agent.loop import Agent, ToolCallRecord, TurnResult
 from agent.registry import Deps, build_skills
@@ -62,7 +62,7 @@ def main() -> int:
         datasets=datasets,
         now=fixed_clock(args.now) if args.now else system_clock,
         handoff_log=config.HANDOFF_LOG,
-        code_store=InMemoryCodeStore(),
+        code_store=JsonCodeStore(config.CODE_STORE),
     )
     session_id = uuid.uuid4().hex[:8]
     llm = LLM()

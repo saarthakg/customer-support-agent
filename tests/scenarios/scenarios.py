@@ -134,6 +134,37 @@ def first_tool_value_in_last_reply(name: str, key: str) -> Check:
     return check
 
 
+_EMOJI = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]")
+_OUTDOORS = re.compile(
+    r"onward|unknown|trail|summit|adventure|mountain|peak|wild|outdoor|journey|trek|hik|explor|camp|slopes", re.I
+)
+
+
+def voiced(turn: int) -> Check:
+    """Brand voice on a happy path: 1-2 emojis and an outdoors reference (brief: 'frequent references to the outdoors')."""
+    def check(results: list[TurnResult]) -> str | None:
+        reply = results[turn].reply
+        emojis = len(_EMOJI.findall(reply))
+        if not 1 <= emojis <= 2:
+            return f"turn {turn}: {emojis} emojis (want 1-2)"
+        return None if _OUTDOORS.search(reply) else f"turn {turn}: no outdoors reference"
+    return check
+
+
+def on_own_line(name: str, key: str) -> Check:
+    """A tool value (link or code) sits on a line by itself, so it's easy to find and copy."""
+    def check(results: list[TurnResult]) -> str | None:
+        for i, r in enumerate(results):
+            for c in r.tool_calls:
+                value = c.result.get(key) if c.result.get("ok") else None
+                if value and value in r.reply:
+                    lines = [line.strip().strip("*`<>()[]:") for line in r.reply.splitlines()]
+                    if value not in lines:
+                        return f"turn {i}: {key} not on its own line"
+        return None
+    return check
+
+
 def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
     """The model's own drafts were clean. A supervisor catch protects the customer but still counts as a miss."""
     blocked = [v for r in results for v in r.supervisor_blocked]
@@ -187,6 +218,8 @@ SCENARIOS: list[Scenario] = [
         origin="orders journey spec: happy path",
         turns=["Hi, where's my order?", "john.doe@example.com", "W001"],
         checks=[
+            voiced(turn=2),
+            on_own_line("lookup_order", "tracking_url"),
             tool_returned("lookup_order", ok=True, order_number="#W001", status="delivered"),
             reply_contains(TRACKING_URL.format("TRK123456789"), "tracking link verbatim"),
             reply_contains("Bhavish's Backcountry Blaze Backpack", "item named"),
@@ -198,6 +231,7 @@ SCENARIOS: list[Scenario] = [
         origin="orders journey spec: fulfilled has null tracking (D-14)",
         turns=["Can you check order #W003? My email is alice.johnson@example.com"],
         checks=[
+            voiced(turn=0),
             tool_returned("lookup_order", status="fulfilled", tracking_url=None),
             no_reply_matches(ANY_LINK, "offered a link for an order with no tracking"),
             some_reply_matches(r"tracking", "explains tracking isn't available yet", within_turns=1),
@@ -223,6 +257,8 @@ SCENARIOS: list[Scenario] = [
         origin="Phase 0 finding: #W005's only SKU (SOBN008) is not in the catalog",
         turns=["status of order W005 for charlie.davis@example.com"],
         checks=[
+            voiced(turn=0),
+            on_own_line("lookup_order", "tracking_url"),
             tool_returned("lookup_order", order_number="#W005", status="delivered"),
             reply_contains("SOBN008", "unknown item shown by item code"),
             reply_contains(TRACKING_URL.format("TRK112233445"), "tracking link verbatim"),
@@ -234,6 +270,7 @@ SCENARIOS: list[Scenario] = [
         origin="Phase 2 transcript bug: model forgot the email after order_not_found and never reached lockout",
         turns=["check order W002, my email is john.doe@example.com", "hmm, try W003", "what about W004?", "yes"],
         checks=[
+            NO_EMOJI,
             tool_returned("lookup_order", error="order_not_found"),
             tool_returned("lookup_order", error="too_many_attempts"),
             tool_returned("escalate_to_human", ok=True),
@@ -248,6 +285,8 @@ SCENARIOS: list[Scenario] = [
         origin="D-11: customers type 'order 2' or 'w1'",
         turns=["order 2 please, jane.smith@example.com", "and can you also check w1 for john.doe@example.com?"],
         checks=[
+            voiced(turn=0),
+            voiced(turn=1),
             tool_returned("lookup_order", order_number="#W002", status="in-transit"),
             tool_returned("lookup_order", order_number="#W001", status="delivered"),
             reply_contains(TRACKING_URL.format("TRK987654321"), "W002 link verbatim"),
@@ -271,7 +310,10 @@ SCENARIOS: list[Scenario] = [
         now="2026-11-03T08:30",
         turns=["Hi! Can I get the Early Risers discount code?", "jane.smith@example.com"],
         checks=[
-            tool_not_called_on_turn("issue_early_risers_code", 0),  # no email yet: must ask for it first
+            voiced(turn=1),
+            on_own_line("issue_early_risers_code", "code"),
+            # D-62: call immediately without an email; the tool checks the window, then says needs_email.
+            tool_returned("issue_early_risers_code", error="needs_email"),
             some_reply_matches(r"e-?mail", "asks for the email", within_turns=1),
             tool_returned("issue_early_risers_code", ok=True, email="jane.smith@example.com", already_issued=False),
             reply_contains_tool_value("issue_early_risers_code", "code"),
@@ -290,6 +332,8 @@ SCENARIOS: list[Scenario] = [
         # either way the customer must see the same code. Cross-chat idempotency (already_issued) is
         # code's job and is covered by unit tests.
         checks=[
+            voiced(turn=0),
+            on_own_line("issue_early_risers_code", "code"),
             tool_returned("issue_early_risers_code", ok=True, already_issued=False),
             same_value_every_time("issue_early_risers_code", "code"),
             reply_contains_tool_value("issue_early_risers_code", "code"),
@@ -316,10 +360,25 @@ SCENARIOS: list[Scenario] = [
         now="2026-11-03T09:00",
         turns=["Do you have any discounts right now?", "Yes please! It's alice.johnson@example.com"],
         checks=[
+            voiced(turn=1),
             tool_not_called_on_turn("issue_early_risers_code", 0),
             some_reply_matches(r"early risers", "mentions the Early Risers promotion", within_turns=1),
             tool_returned("issue_early_risers_code", ok=True),
             reply_contains_tool_value("issue_early_risers_code", "code"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="promo_generic_discount_outside_window",
+        origin="D-62: outside the window, never ask for an email just to decline",
+        now="2026-11-03T14:20",
+        turns=["Do you have any discounts right now?", "yes please"],
+        checks=[
+            tool_not_called_on_turn("issue_early_risers_code", 0),
+            some_reply_matches(r"early risers", "mentions the Early Risers promotion", within_turns=1),
+            tool_returned("issue_early_risers_code", error="outside_promo_window"),
+            no_reply_matches(r"e-?mail", "asked for an email outside the window"),
+            no_reply_matches(PROMO_CODE, "showed a code outside the window"),
             supervisor_never_blocked,
         ],
     ),
@@ -339,6 +398,7 @@ SCENARIOS: list[Scenario] = [
         origin="products journey spec: clear need, recommend right away",
         turns=["I'm heading on a ski trip next month, what should I get?"],
         checks=[
+            voiced(turn=0),
             tool_called("list_products", by_turn=0),
             reply_contains("Crain's Summit Pro X Skis", "recommends the skis by exact name"),
             max_questions(turn=0, n=1),
@@ -407,6 +467,7 @@ SCENARIOS: list[Scenario] = [
         origin="D-19: whimsical catalog, grounded and never mocked",
         turns=["I want to explore the wild without scaring off the animals"],
         checks=[
+            voiced(turn=0),
             tool_called("list_products", by_turn=0),
             reply_contains("Nishita's Invisibility Cloak", "recommends the cloak by exact name"),
             no_reply_matches(r"\b(joke|silly|ridiculous|lol|haha|not real|fictional|pretend)\b", "mocked a product"),

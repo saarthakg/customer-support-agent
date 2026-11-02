@@ -335,3 +335,22 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Found:** after Early Risers was added, `product_no_repeated_clarifying_question` dropped from 5/5 to 0/2. The prompt grew, and the model again treated "yes please" (to "is there other gear you need?") as a new vague request.
 - **Fix:** the products spec says a yes to your offer is a request to see it, so recommend from what you know. Re-measured 5/5 alongside the boots and vague scenarios.
 - **Why it's logged:** it's the concrete case for running the whole scenario suite after *every* skill change. Skills are independent in code but share one prompt, so they aren't independent in behavior.
+
+---
+
+## Pre-README fixes
+
+### D-61 JSON-backed code store for the CLI · Accepted
+- **Confirmed:** the earlier transcripts showing different codes for jane.smith (`…WG964W`, `…TVAMB3`) came from separate processes, each with its own in-memory store, so "different code" was expected, not an idempotency bug. But a CLI restart forgot every code, which undercuts "same customer, same day, same code" in a live demo.
+- **Choice:** `JsonCodeStore` (the in-memory store plus load-on-start and save-on-write, with an atomic temp-file rename) at `state/issued_codes.json`. That folder is git-ignored, so it's excluded from the `git archive` zip. The CLI uses it; tests and scenarios keep `InMemoryCodeStore` so runs stay independent. Verified by restarting the CLI with the same `--now`: the second process returns the same code with `already_issued: true`. Delete `state/` to reset a demo.
+- **Alternative:** SQLite (heavier, and a DB is out of scope per §4).
+
+### D-62 Window first, email optional · Accepted
+- **Found:** the agent would ask for an email and then decline because of the time. Separately, one live run answered an explicit request *with* an email by asking "May I check the current Pacific time for you?" instead of calling the tool (session 454020c7).
+- **Choice:** `issue_early_risers_code(email="")` checks the window *before* anything else. Outside, it returns `outside_promo_window` (with hours and current PT time) whatever the email. Inside with no email, it returns `needs_email`. Inside with a bad email, `invalid_email`. The spec says to call the tool immediately on an explicit ask or yes, with or without an email, and never to check the time itself. A new scenario at 2:20 PM asserts the agent never asks for an email.
+- **Why:** a customer shouldn't hand over personal data just to be told "come back at 8". It also removes the model's last reason to reason about time.
+
+### D-63 Two-tier brand voice with deterministic checks · Accepted
+- **Choice:** VOICE now says happy-path replies *always* carry one outdoors phrase plus 1–2 emojis, after the substance (link or code first, on its own line). Problem paths (order error, security limit, handoff, frustration) stay plain: no emojis, no adventure phrases.
+- **Checks:** `voiced(turn)` (1–2 emojis and an outdoors word) on the happy-path turns of 10 scenarios. `on_own_line` for tracking links and codes. `NO_EMOJI` on the error and lockout paths. These are cheap proxies for "correct tone" that catch regressions. They don't grade quality.
+- **Result (full suite, k=2, one pass, no follow-up tuning):** 21/22 scenarios pass^2, 43/44 runs. The miss was `order_error_escalates` 1/2: the model added an unprompted "Just to confirm, your email is … and order W004?" step before looking up, so the 3-turn script ended before the escalation. The error-path tone was correct in both runs. Reported, not chased.
