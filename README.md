@@ -13,6 +13,7 @@ python3 -m venv .venv && source .venv/bin/activate   # 1. create + activate the 
 pip install -r requirements.txt                      # 2. install openai, python-dotenv, pytest
 cp .env.example .env                                 # 3. then edit .env: OPENAI_API_KEY=sk-...
 python -m agent.main            # chat   (add --debug to see tool calls, tokens, latency)
+python -m agent.main --now 2026-11-03T08:30   # freeze the clock (Pacific) to demo Early Risers any time
 pytest                          # deterministic tests, no network, no API key needed
 ```
 
@@ -45,6 +46,7 @@ Conversation scenarios run against the real model, k times each (pass^k: a scena
 | `hiking_boots_vague_start` | 5/5 | says we don't carry boots; never presents a catalog item as a replacement; no invented links, prices or website referrals |
 | `hiking_boots_size_and_price` | 5/5 | same, plus no size-availability claims |
 | `product_no_repeated_clarifying_question` | 5/5 | asks "what are you planning?" at most once across turns |
+| all 21 scenarios | 20/21 at k=2, then the one regression fixed and re-measured 5/5 | full regression pass after Early Risers was added |
 
 The boots assertion is "never presents a catalog item as a *replacement* for the requested product type". Mentioning what we do carry ("I can help with backpacks or other gear") is allowed. An earlier, stricter version that failed on any mention of a poorly fitting product measured about 2/5. Those failures were category mentions, not substitutions, so the check was redefined to match the principle rather than tuning the prompt further (DECISIONS D-54).
 

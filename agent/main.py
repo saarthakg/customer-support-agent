@@ -1,7 +1,8 @@
 """Terminal chat for the Sierra Outfitters agent.
 
-    python -m agent.main            # chat
-    python -m agent.main --debug    # also show tool calls, tokens and latency inline
+    python -m agent.main                          # chat
+    python -m agent.main --debug                  # also show tool calls, tokens and latency inline
+    python -m agent.main --now 2026-11-03T08:30   # freeze the clock (Pacific if no offset) to demo Early Risers
 """
 
 import argparse
@@ -10,7 +11,6 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime, timezone
 
 # Startup checks run before third-party imports so a wrong interpreter or a
 # missing virtualenv gets a one-line fix instead of a traceback.
@@ -25,6 +25,8 @@ except ModuleNotFoundError as e:
     sys.exit(f"Missing dependency '{e.name}' (is the virtualenv active?). Fix: {SETUP_HINT}")
 
 from agent import config
+from agent.clock import PACIFIC, fixed_clock, parse_now, system_clock
+from agent.code_store import InMemoryCodeStore
 from agent.data import DataError, load_datasets
 from agent.loop import Agent, ToolCallRecord, TurnResult
 from agent.registry import Deps, build_skills
@@ -38,6 +40,10 @@ EXIT_WORDS = {"exit", "quit", "bye"}
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sierra Outfitters support agent")
     parser.add_argument("--debug", action="store_true", help="show tool calls, tokens and latency inline")
+    parser.add_argument(
+        "--now", type=parse_now, metavar="ISO_TIME",
+        help="freeze the clock, e.g. 2026-11-03T08:30 (Pacific if no offset) or 2026-11-03T16:30+00:00",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -52,7 +58,12 @@ def main() -> int:
         print(f"Could not load data: {e}", file=sys.stderr)
         return 1
 
-    deps = Deps(datasets=datasets, now=lambda: datetime.now(timezone.utc), handoff_log=config.HANDOFF_LOG)
+    deps = Deps(
+        datasets=datasets,
+        now=fixed_clock(args.now) if args.now else system_clock,
+        handoff_log=config.HANDOFF_LOG,
+        code_store=InMemoryCodeStore(),
+    )
     session_id = uuid.uuid4().hex[:8]
     llm = LLM()
     agent = Agent(
@@ -64,6 +75,9 @@ def main() -> int:
 
     if args.debug:
         print(f"{DIM}[session {session_id} · model {config.MODEL} · tools: {', '.join(agent.tools) or 'none'}]{RESET}")
+    if args.now:
+        # Always shown, not just in --debug: a demo with a faked clock should say so.
+        print(f"{DIM}[clock frozen at {args.now.astimezone(PACIFIC):%Y-%m-%d %I:%M %p} Pacific]{RESET}")
     print(f"\nSierra: {agent.greet()}\n")
 
     while True:

@@ -93,7 +93,8 @@ def test_system_prompt_includes_each_skill_spec():
 def test_registry_rejects_duplicate_tool_names():
     builder = lambda deps: echo_skill()  # noqa: E731
     with pytest.raises(ValueError, match="duplicate"):
-        build_skills(Deps(datasets=None, now=datetime.now, handoff_log=Path("unused")), [builder, builder])
+        deps = Deps(datasets=None, now=datetime.now, handoff_log=Path("unused"), code_store=None)
+        build_skills(deps, [builder, builder])
 
 
 def test_greeting_does_not_advertise_promotions():
@@ -185,7 +186,7 @@ def test_enabled_skills_build_with_unique_tools(deps):
     from agent.skills import SKILL_BUILDERS
 
     agent = Agent(FakeLLM(), skills=build_skills(deps, SKILL_BUILDERS))
-    assert {"lookup_order", "escalate_to_human"} <= agent.tools.keys()
+    assert agent.tools.keys() == {"lookup_order", "list_products", "issue_early_risers_code", "escalate_to_human"}
     assert "# Skill: Order status and tracking" in agent.messages[0]["content"]
 
 

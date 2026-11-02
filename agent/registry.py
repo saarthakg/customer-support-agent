@@ -9,9 +9,10 @@ assembly never change.
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
+from agent.clock import Clock
+from agent.code_store import CodeStore
 from agent.data import Datasets
 
 
@@ -44,8 +45,9 @@ class Deps:
     """Everything a skill may depend on, passed in explicitly so tests can substitute fakes."""
 
     datasets: Datasets
-    now: Callable[[], datetime]  # timezone-aware; injectable so tests and --now can control time
+    now: Clock  # timezone-aware; injectable so tests and --now can control time
     handoff_log: Path  # where escalation tickets are appended
+    code_store: CodeStore  # issued Early Risers codes
 
 
 SkillBuilder = Callable[[Deps], Skill]

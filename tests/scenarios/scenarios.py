@@ -100,6 +100,40 @@ def question_asked_at_most(pattern: str, n: int, why: str) -> Check:
     return check
 
 
+def reply_contains_tool_value(name: str, key: str) -> Check:
+    """Every successful `name` result's `key` (e.g. a generated code) appears verbatim in that turn's reply."""
+    def check(results: list[TurnResult]) -> str | None:
+        for i, r in enumerate(results):
+            for c in r.tool_calls:
+                if c.name == name and c.result.get("ok") and c.result[key] not in r.reply:
+                    return f"turn {i}: {key} {c.result[key]!r} not in reply"
+        return None
+    return check
+
+
+def tool_not_called_on_turn(name: str, turn: int) -> Check:
+    def check(results: list[TurnResult]) -> str | None:
+        hit = any(c.name == name for c in results[turn].tool_calls)
+        return f"{name} called on turn {turn}" if hit else None
+    return check
+
+
+def same_value_every_time(name: str, key: str) -> Check:
+    def check(results: list[TurnResult]) -> str | None:
+        values = {c.result[key] for r in results for c in r.tool_calls if c.name == name and c.result.get("ok")}
+        return f"{name} returned different {key}s: {values}" if len(values) > 1 else None
+    return check
+
+
+def first_tool_value_in_last_reply(name: str, key: str) -> Check:
+    def check(results: list[TurnResult]) -> str | None:
+        values = [c.result[key] for r in results for c in r.tool_calls if c.name == name and c.result.get("ok")]
+        if not values:
+            return f"no successful {name} call"
+        return None if values[0] in results[-1].reply else f"last reply doesn't repeat {key} {values[0]!r}"
+    return check
+
+
 def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
     """The model's own drafts were clean. A supervisor catch protects the customer but still counts as a miss."""
     blocked = [v for r in results for v in r.supervisor_blocked]
@@ -110,6 +144,8 @@ TRACKING_URL = "https://tools.usps.com/go/TrackConfirmAction?tLabels={}"
 ANY_LINK = r"https?://|www\."
 NO_EMOJI = no_reply_matches(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", "used an emoji on a high-empathy path")
 # Price claims, not echoes: "your $50 budget" is fine, "it's $49.99" / "costs $50" is not.
+PROMO_CODE = r"\bEARLYRISER-[A-Z0-9]+"
+NO_PROMO_MENTION = no_reply_matches(r"early riser|promo|discount|coupon|% off", "brought up the promotion unprompted")
 NO_PRICES = no_reply_matches(
     r"\$\s?\d+\.\d{2}|(cost|costs|priced at|price is|for only|just|retails? for)\s+(about\s+)?\$\s?\d",
     "stated a price",
@@ -226,6 +262,75 @@ SCENARIOS: list[Scenario] = [
         checks=[
             tool_not_called("lookup_order"),
             some_reply_matches(r"e-?mail", "asks for the email", within_turns=1),
+        ],
+    ),
+    # --- Early Risers (clock frozen via `now`; times without an offset are Pacific) ---
+    Scenario(
+        name="promo_explicit_request_in_window",
+        origin="Early Risers journey spec: explicit ask inside the window, email collected",
+        now="2026-11-03T08:30",
+        turns=["Hi! Can I get the Early Risers discount code?", "jane.smith@example.com"],
+        checks=[
+            tool_not_called_on_turn("issue_early_risers_code", 0),  # no email yet: must ask for it first
+            some_reply_matches(r"e-?mail", "asks for the email", within_turns=1),
+            tool_returned("issue_early_risers_code", ok=True, email="jane.smith@example.com", already_issued=False),
+            reply_contains_tool_value("issue_early_risers_code", "code"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="promo_same_email_gets_same_code",
+        origin="D-23: idempotent per customer per Pacific day",
+        now="2026-11-03T09:15",
+        turns=[
+            "I'd like the Early Risers code please, my email is jane.smith@example.com",
+            "Sorry, can I get another Early Risers code? Same email.",
+        ],
+        # Within one chat the model may re-show the code from history instead of calling the tool again;
+        # either way the customer must see the same code. Cross-chat idempotency (already_issued) is
+        # code's job and is covered by unit tests.
+        checks=[
+            tool_returned("issue_early_risers_code", ok=True, already_issued=False),
+            same_value_every_time("issue_early_risers_code", "code"),
+            reply_contains_tool_value("issue_early_risers_code", "code"),
+            first_tool_value_in_last_reply("issue_early_risers_code", "code"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="promo_explicit_request_outside_window",
+        origin="D-20: 10:00:00 PT is outside the window",
+        now="2026-11-03T10:00",
+        turns=["Can I have the Early Risers promo code? My email is john.doe@example.com"],
+        checks=[
+            tool_returned("issue_early_risers_code", error="outside_promo_window"),
+            no_reply_matches(PROMO_CODE, "showed a code outside the window"),
+            some_reply_matches(r"8(:00)?\s*(AM|a\.m\.)?\s*(-|–|to|and)\s*10(:00)?", "states the 8-10 window", within_turns=1),
+            some_reply_matches(r"Pacific|\bPT\b", "says the hours are Pacific", within_turns=1),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="promo_generic_discount_question",
+        origin="D-21: may mention the promo when asked about discounts; issue only after an explicit yes",
+        now="2026-11-03T09:00",
+        turns=["Do you have any discounts right now?", "Yes please! It's alice.johnson@example.com"],
+        checks=[
+            tool_not_called_on_turn("issue_early_risers_code", 0),
+            some_reply_matches(r"early risers", "mentions the Early Risers promotion", within_turns=1),
+            tool_returned("issue_early_risers_code", ok=True),
+            reply_contains_tool_value("issue_early_risers_code", "code"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="promo_never_volunteered",
+        origin="D-21/D-35: never advertised unprompted, even inside the window",
+        now="2026-11-03T09:00",
+        turns=["Hi, where's my order? john.doe@example.com, W001", "Great, thanks!"],
+        checks=[
+            tool_not_called("issue_early_risers_code"),
+            NO_PROMO_MENTION,
         ],
     ),
     # --- Products ---

@@ -1,0 +1,125 @@
+"""Early Risers promotion: issue_early_risers_code(email).
+
+Code decides everything that matters: whether it's 8-10 AM Pacific right now,
+who the customer is (normalized email), whether they already have today's code,
+and the code itself. The model decides only whether the customer explicitly
+asked, and how to say the result (D-08, D-20 to D-24).
+"""
+
+import re
+import secrets
+from collections.abc import Callable
+from datetime import datetime, time
+
+from agent.clock import PACIFIC, Clock
+from agent.code_store import CodeStore
+from agent.data import normalize_email
+from agent.registry import Deps, Skill, Tool
+
+DISCOUNT_PERCENT = 10
+# Half-open window [08:00, 10:00) Pacific: 10:00:00 is outside (D-20).
+WINDOW_START = time(8, 0)
+WINDOW_END = time(10, 0)
+WINDOW_TEXT = "8:00-10:00 AM Pacific Time"
+
+CODE_PREFIX = "EARLYRISER-"
+# No 0/O, 1/I/L: codes get read aloud and retyped at checkout.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+# Deliberately looser than the real format, so the supervisor also catches invented
+# look-alikes ("EARLYBIRD10", "SIERRA10"). Case-sensitive on purpose: prose like
+# "the Early Risers promotion" must not match.
+CODE_PATTERN = re.compile(r"\b(?:EARLY-?(?:RISERS?|BIRD)|SIERRA)(?:-[A-Z0-9]+|\d+)\b")
+
+INSTRUCTIONS = f"""\
+The Early Risers promotion is a {DISCOUNT_PERCENT}% discount code, available only {WINDOW_TEXT}. \
+The tool decides eligibility; you never decide whether it's the right time.
+- Never bring it up unprompted. If the customer asks about discounts, deals, coupons or promotions in general, \
+tell them about Early Risers ({DISCOUNT_PERCENT}% off, {WINDOW_TEXT}) and ask whether they'd like a code. \
+Don't issue it until they explicitly say yes.
+- Call issue_early_risers_code only when the customer explicitly asks for the Early Risers code or discount, \
+or explicitly says yes to your offer. You need their email: reuse it if they gave it earlier in this \
+conversation; otherwise ask for it, and only it.
+- On success: say it's {DISCOUNT_PERCENT}% off and put the code on its own line, exactly as returned. If \
+already_issued is true, say this is the same code they were given earlier today. Don't invent an expiry date, \
+minimum spend, exclusions, or redemption steps beyond "use it at checkout".
+- outside_promo_window: no code. Say the promotion runs {WINDOW_TEXT}, mention the current Pacific time from \
+the tool, and invite them back. Keep it friendly and brief.
+- invalid_email: ask them to re-check their email."""
+
+
+def generate_code() -> str:
+    return CODE_PREFIX + "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+
+
+def in_window(moment: datetime) -> bool:
+    local = moment.astimezone(PACIFIC).time()
+    return WINDOW_START <= local < WINDOW_END
+
+
+class EarlyRisers:
+    def __init__(self, now: Clock, store: CodeStore, new_code: Callable[[], str] = generate_code) -> None:
+        self.now = now
+        self.store = store
+        self.new_code = new_code  # injectable so tests can force a collision
+
+    def issue_early_risers_code(self, email: str) -> dict:
+        normalized_email = normalize_email(email)
+        if normalized_email is None:
+            return {"ok": False, "error": "invalid_email"}
+
+        moment = self.now()
+        if not in_window(moment):
+            return {
+                "ok": False,
+                "error": "outside_promo_window",
+                "window": WINDOW_TEXT,
+                "current_time_pt": moment.astimezone(PACIFIC).strftime("%I:%M %p PT").lstrip("0"),
+            }
+
+        # "Today" is the Pacific calendar day: the window and the idempotency key share a timezone.
+        today = moment.astimezone(PACIFIC).date()
+        existing = self.store.get(normalized_email, today)
+        if existing:
+            return self._issued(existing, normalized_email, already_issued=True)
+
+        code = self.new_code()
+        while self.store.exists(code):  # astronomically rare with 31^6 codes, but uniqueness is a promise
+            code = self.new_code()
+        self.store.put(normalized_email, today, code)
+        return self._issued(code, normalized_email, already_issued=False)
+
+    @staticmethod
+    def _issued(code: str, email: str, already_issued: bool) -> dict:
+        return {
+            "ok": True,
+            "code": code,
+            "discount_percent": DISCOUNT_PERCENT,
+            "email": email,  # the identity the code is keyed to, so trace and model see exactly who got it
+            "already_issued": already_issued,
+        }
+
+
+def build(deps: Deps) -> Skill:
+    promo = EarlyRisers(deps.now, deps.code_store)
+    return Skill(
+        name="Early Risers promotion",
+        instructions=INSTRUCTIONS,
+        tools=(
+            Tool(
+                name="issue_early_risers_code",
+                description=(
+                    f"Issue the customer's Early Risers {DISCOUNT_PERCENT}% discount code. Call ONLY when the "
+                    "customer explicitly asks for the Early Risers code/discount, or explicitly says yes after "
+                    f"you mention it. Eligibility ({WINDOW_TEXT}) is decided by this tool; never decide it "
+                    "yourself. The same email on the same day gets the same code back."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {"email": {"type": "string", "description": "The customer's email address."}},
+                    "required": ["email"],
+                },
+                handler=promo.issue_early_risers_code,
+            ),
+        ),
+        guarded_values={"blocked_code": CODE_PATTERN},
+    )

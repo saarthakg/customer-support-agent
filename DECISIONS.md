@@ -306,3 +306,32 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Boots:** the assertion is now "never presents a catalog item as a replacement for the requested product type". It fails only when one sentence contains replacement language ("instead", "alternative", "substitute", …) *and* a catalog product name (names derived from the catalog), or when the teleporting shoes, the only footwear-like item, are offered in a boots conversation. The old check failed on category mentions like "backpacks, energy drinks, or other essentials", which aren't substitutions; it measured about 2/5. The new check measures 5/5 for both boots scenarios. No further prompt tuning was done for this item (option a).
 - **Repeated clarifying question:** "ask each question at most once" alone measured 1/5. The root cause was that the model didn't treat "hiking boots" as already answering "what activity?". Adding "infer what you can before asking (hiking boots means hiking)" measured 5/5.
 - **No filler:** at most 3 recommendations, each tied to what the customer said, and one is fine. Novelty items that don't serve the stated need (teleporting shoes for a weekend outdoors) are named in the spec as filler.
+
+---
+
+## Phase 2: Early Risers
+
+### D-55 Clock and `--now` · Accepted
+- **Choice:** `agent/clock.py` holds `PACIFIC` (zoneinfo), `system_clock`, `parse_now` and `fixed_clock`. `--now` *freezes* the clock. An ISO time without an offset is read as Pacific (`--now 2026-11-03T08:30`), because that's how a demo thinks about the window. Explicit offsets are respected. When the clock is overridden, the CLI always prints a dim `[clock frozen at … Pacific]` line, not only in `--debug`.
+- **Alternative:** an offset clock that keeps ticking from the given time, or reading naive times as UTC.
+- **Why:** a frozen clock makes every demo run identical, including at the 7:59 and 10:00 boundaries. A demo with a faked clock should say so on screen. Scenarios use the same `fixed_clock(parse_now(...))` via `Scenario.now`.
+
+### D-56 Code format and supervised pattern · Accepted
+- **Format:** `EARLYRISER-` plus 6 characters from an alphabet without 0/O/1/I/L, drawn with `secrets.choice` and re-drawn on collision. The collision path is tested with an injected generator.
+- **Supervised pattern (D-47):** declared by the skill and deliberately looser than the format. It also catches invented look-alikes (`EARLYBIRD10`, `SIERRA10`, `EARLY-RISERS-2026`). It's case-sensitive so prose ("the Early Risers promotion", "Sierra Outfitters") never trips it. Both directions are tested.
+
+### D-57 "Today" is the Pacific day; outside the window nothing is issued · Accepted
+- The idempotency key is (normalized email, Pacific calendar date), so the key and the window always agree on what "today" means. That holds regardless of the server's timezone.
+- Outside the window the tool returns `outside_promo_window` with the window text and the current Pacific time, and it never returns a code, even one issued earlier that day. Within a single chat the model may re-show a code it already received (the supervisor verifies it's exact). Re-issuing from the store after hours would be a policy change, deferred.
+
+### D-58 In-chat repeats vs cross-chat idempotency · Accepted
+- **Observed:** when the same customer asks again in the *same* chat, the model re-shows the code from history ("the same code you were given earlier today") instead of calling the tool. The supervisor confirms it matches a tool result.
+- **Choice:** accept it. The scenario checks what the customer sees (the same code both times), not how the model got it. A forced second call would be exactly the redundant call D-49 counts. Idempotency is code's guarantee: unit tests cover the same email on the same day (including case differences), and a live two-chat demo shows `already_issued: true` across separate conversations sharing one store.
+
+### D-59 Code store in `Deps` · Accepted
+- `CodeStore` (a protocol with `get`, `put`, `exists`) and `InMemoryCodeStore` live in `agent/code_store.py`, a neutral module, so `registry.Deps` can reference it without importing a skill. `main.py` builds one store per process. Tests and scenarios build their own.
+
+### D-60 Adding a skill regressed a measured behavior · Accepted
+- **Found:** after Early Risers was added, `product_no_repeated_clarifying_question` dropped from 5/5 to 0/2. The prompt grew, and the model again treated "yes please" (to "is there other gear you need?") as a new vague request.
+- **Fix:** the products spec says a yes to your offer is a request to see it, so recommend from what you know. Re-measured 5/5 alongside the boots and vague scenarios.
+- **Why it's logged:** it's the concrete case for running the whole scenario suite after *every* skill change. Skills are independent in code but share one prompt, so they aren't independent in behavior.

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from agent import config
+from agent.code_store import InMemoryCodeStore
 from agent.data import load_datasets
 from agent.registry import Deps
 
@@ -16,4 +17,9 @@ def datasets():
 
 @pytest.fixture
 def deps(datasets, tmp_path):
-    return Deps(datasets=datasets, now=lambda: FIXED_NOW, handoff_log=tmp_path / "handoffs.jsonl")
+    return Deps(
+        datasets=datasets,
+        now=lambda: FIXED_NOW,
+        handoff_log=tmp_path / "handoffs.jsonl",
+        code_store=InMemoryCodeStore(),
+    )
