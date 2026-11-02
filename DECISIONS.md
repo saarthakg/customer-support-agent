@@ -182,3 +182,15 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 ### D-32 Data extraction script kept in the repo · Accepted
 - **Choice:** `scripts/extract_data.py` regenerates `data/*.json` from `pdftotext -layout` output. It isn't imported by the agent.
 - **Why:** reviewers can audit exactly how the PDFs became JSON (D-01).
+
+---
+
+## Phase 1 review fixes
+
+### D-33 Startup checks with a one-line fix · Accepted
+- **Choice:** `main.py` checks the Python version and catches `ModuleNotFoundError` *before* importing third-party code. A missing `OPENAI_API_KEY` is also caught. Each prints a one-line fix, and the process exits 1.
+- **Why:** the onsite starts by running the code live. Running in the wrong interpreter (e.g. conda base) is the most likely failure, and a traceback costs minutes to read under pressure. Verified from a fresh clone with an empty environment (`env -i`).
+
+### D-34 Submission zip = `git archive` · Accepted
+- **Choice:** `git archive --format=zip -o sierra-outfitters-agent.zip HEAD`.
+- **Why:** only tracked files ship, so `.env`, `.venv/`, `logs/`, and the confidential *Interviewing at Sierra* PDF (git-ignored) are excluded by construction rather than by remembering to delete them. Verified by listing the archive.

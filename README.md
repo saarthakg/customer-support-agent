@@ -6,13 +6,17 @@ A terminal customer-support agent for Sierra Outfitters, built on `gpt-4.1-mini`
 
 ## Quickstart
 
+Requires Python 3.11+. From the repo root, in a fresh shell (deactivate conda first if your prompt shows `(base)`: `conda deactivate`):
+
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env            # then set OPENAI_API_KEY
-.venv/bin/python -m agent.main --debug
+python3 -m venv .venv && source .venv/bin/activate   # 1. create + activate the virtualenv
+pip install -r requirements.txt                      # 2. install openai, python-dotenv, pytest
+cp .env.example .env                                 # 3. then edit .env: OPENAI_API_KEY=sk-...
+python -m agent.main            # chat   (add --debug to see tool calls, tokens, latency)
+pytest                          # deterministic tests, no network, no API key needed
 ```
 
-Tests (deterministic, no network): `.venv/bin/pytest`
+Every new shell needs `source .venv/bin/activate` again. If it's skipped, the agent exits with a one-line fix instead of a traceback.
 
 ## Data
 

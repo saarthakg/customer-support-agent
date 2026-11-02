@@ -11,11 +11,20 @@ import os
 import sys
 import uuid
 
-from dotenv import load_dotenv
+# Startup checks run before third-party imports so a wrong interpreter or a
+# missing virtualenv gets a one-line fix instead of a traceback.
+SETUP_HINT = "source .venv/bin/activate && pip install -r requirements.txt  (see README Quickstart)"
+if sys.version_info < (3, 11):
+    sys.exit(f"Python 3.11+ required (found {sys.version.split()[0]}). Fix: {SETUP_HINT}")
+try:
+    from dotenv import load_dotenv
+
+    from agent.llm import LLM
+except ModuleNotFoundError as e:
+    sys.exit(f"Missing dependency '{e.name}' (is the virtualenv active?). Fix: {SETUP_HINT}")
 
 from agent import config
 from agent.data import DataError, load_datasets
-from agent.llm import LLM
 from agent.loop import Agent, ToolCallRecord, TurnResult
 from agent.registry import Deps, build_skills
 from agent.trace import Tracer
@@ -32,7 +41,7 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     load_dotenv()
     if not os.environ.get("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY is not set. Copy .env.example to .env and add your key.", file=sys.stderr)
+        print("OPENAI_API_KEY is not set. Fix: cp .env.example .env, then put your key in .env", file=sys.stderr)
         return 1
 
     try:
