@@ -5,7 +5,7 @@ import json
 import pytest
 
 from agent.llm import LLMError, LLMResponse, ToolCall
-from agent.loop import FALLBACK_REPLY, Agent
+from agent.loop import FALLBACK_REPLY, SUPERVISOR_FALLBACK_REPLY, Agent
 from agent.prompt import build_system_prompt
 from agent.registry import Deps, Skill, Tool, build_skills
 
@@ -131,3 +131,48 @@ def test_greeting_does_not_advertise_promotions():
     from agent.loop import GREETING
 
     assert not any(word in GREETING.lower() for word in ("promo", "discount", "early riser", "deal"))
+
+
+# --- supervisor integration (P11) ---
+
+BAD_LINK = "Browse here: https://www.sierraoutfitters.com/hiking-boots"
+
+
+def test_supervisor_passes_clean_reply():
+    result = Agent(FakeLLM(text("Happy trails!")), skills=[]).respond("hi")
+    assert result.supervisor == "pass"
+    assert result.supervisor_blocked == []
+
+
+def test_supervisor_retries_once_with_correction_then_passes():
+    llm = FakeLLM(text(BAD_LINK), text("I can't share a link for that here."))
+    agent = Agent(llm, skills=[])
+    result = agent.respond("boots?")
+
+    assert result.reply == "I can't share a link for that here."
+    assert result.outcome == "ok"
+    assert result.supervisor == "retried"
+    assert result.supervisor_blocked == ["blocked_url: https://www.sierraoutfitters.com/hiking-boots"]
+    # The model saw a correction note in place of its bad draft; the draft never reaches history.
+    retry_messages = llm.seen_messages[1]
+    assert retry_messages[-1]["role"] == "system" and "sierraoutfitters.com" in retry_messages[-1]["content"]
+    assert all(BAD_LINK not in str(m.get("content")) for m in agent.messages)
+
+
+def test_supervisor_falls_back_after_second_block_and_rolls_back():
+    agent = Agent(FakeLLM(text(BAD_LINK), text("Try sierraoutfitters.com/boots")), skills=[])
+    before = list(agent.messages)
+    result = agent.respond("boots?")
+
+    assert result.reply == SUPERVISOR_FALLBACK_REPLY
+    assert result.outcome == "supervisor_fallback"
+    assert result.supervisor == "fallback"
+    assert len(result.supervisor_blocked) == 2
+    assert agent.messages == before
+
+
+def test_supervisor_allows_links_returned_by_tools():
+    url = "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK1"
+    skill = echo_skill(lambda word: {"ok": True, "tracking_url": url})
+    agent = Agent(FakeLLM(calls(("echo", '{"word": "x"}')), text(f"Track it:\n{url}")), skills=[skill])
+    assert agent.respond("track").supervisor == "pass"

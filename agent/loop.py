@@ -15,6 +15,7 @@ from agent import config
 from agent.llm import LLMError, LLMResponse, assistant_message, tool_result_message
 from agent.prompt import build_system_prompt
 from agent.registry import Skill, Tool
+from agent.supervisor import Supervisor
 from agent.trace import Tracer
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,11 @@ GREETING = (
 )
 FALLBACK_REPLY = (
     "Sorry, I hit a snag on the trail and couldn't finish that. Could you try again in a moment?"
+)
+# Shown when the supervisor blocks a reply twice: honest, and never repeats the blocked content.
+SUPERVISOR_FALLBACK_REPLY = (
+    "Sorry, I couldn't put together an answer I'm confident is accurate. I can check on an order "
+    "or help you find gear from our catalog. Could you try asking another way?"
 )
 
 
@@ -44,7 +50,9 @@ class ToolCallRecord:
 @dataclass
 class TurnResult:
     reply: str
-    outcome: str  # "ok" | "loop_limit" | "llm_error"
+    outcome: str  # "ok" | "loop_limit" | "llm_error" | "supervisor_fallback"
+    supervisor: str = "not_run"  # "pass" | "retried" (blocked, then fixed) | "fallback" (blocked twice) | "not_run"
+    supervisor_blocked: list[str] = field(default_factory=list)  # e.g. ["blocked_url: https://..."]
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     model_calls: int = 0
     prompt_tokens: int = 0
@@ -68,6 +76,7 @@ class Agent:
         self.on_tool_call = on_tool_call
         self.max_tool_iterations = max_tool_iterations
         self.messages: list[dict] = [{"role": "system", "content": build_system_prompt(skills)}]
+        self.supervisor = Supervisor()
         self.turn_count = 0
 
     def greet(self) -> str:
@@ -90,17 +99,33 @@ class Agent:
                 result.completion_tokens += response.completion_tokens
                 self.messages.append(assistant_message(response))
 
-                if not response.tool_calls:
+                if response.tool_calls:
+                    for call in response.tool_calls:
+                        record = self._run_tool(call.name, call.arguments)
+                        result.tool_calls.append(record)
+                        self.supervisor.observe(record.result)
+                        self.messages.append(tool_result_message(call.id, record.result))
+                        if self.on_tool_call:
+                            self.on_tool_call(record)
+                    continue
+
+                # A final reply: check it before the customer sees it.
+                verdict = self.supervisor.check(response.content or "")
+                if verdict.ok:
                     result.reply = response.content or FALLBACK_REPLY
                     result.outcome = "ok"
+                    if result.supervisor == "not_run":
+                        result.supervisor = "pass"
                     break
-
-                for call in response.tool_calls:
-                    record = self._run_tool(call.name, call.arguments)
-                    result.tool_calls.append(record)
-                    self.messages.append(tool_result_message(call.id, record.result))
-                    if self.on_tool_call:
-                        self.on_tool_call(record)
+                result.supervisor_blocked += verdict.violations
+                if result.supervisor == "retried":  # the one retry is used up
+                    result.reply = SUPERVISOR_FALLBACK_REPLY
+                    result.outcome = "supervisor_fallback"
+                    result.supervisor = "fallback"
+                    break
+                # One corrective retry: swap the bad draft for a system note and ask again.
+                result.supervisor = "retried"
+                self.messages[-1] = {"role": "system", "content": Supervisor.correction(verdict)}
         except LLMError as e:
             logger.warning("model call failed: %s", e)
             result.outcome = "llm_error"
