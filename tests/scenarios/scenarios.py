@@ -11,6 +11,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from agent import config
+from agent.data import load_datasets
 from agent.loop import TurnResult
 
 Check = Callable[[list[TurnResult]], str | None]
@@ -89,6 +91,15 @@ def max_questions(turn: int, n: int) -> Check:
     return check
 
 
+def question_asked_at_most(pattern: str, n: int, why: str) -> Check:
+    """Replies that ask a question matching `pattern` appear at most `n` times across the conversation."""
+    regex = re.compile(pattern, re.IGNORECASE)
+    def check(results: list[TurnResult]) -> str | None:
+        asking = [i for i, r in enumerate(results) if any(regex.search(q) for q in re.findall(r"[^.!?\n]*\?", r.reply))]
+        return f"{why}: asked on turns {asking}" if len(asking) > n else None
+    return check
+
+
 def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
     """The model's own drafts were clean. A supervisor catch protects the customer but still counts as a miss."""
     blocked = [v for r in results for v in r.supervisor_blocked]
@@ -104,9 +115,31 @@ NO_PRICES = no_reply_matches(
     "stated a price",
 )
 # The supervisor catches URLs, not prose: "check our website" points to a page we can't vouch for.
-NO_STRETCHED_PICKS = no_reply_matches(
-    r"energy drink|hairbrush|lampshade", "recommended a product whose description doesn't fit the need"
+# Distinctive part of each catalog name ("Bhavish's Backcountry Blaze Backpack" -> "Backcountry Blaze Backpack"),
+# so the model's short references still match.
+_CATALOG_NAMES = [p.name.split("'s ", 1)[-1] for p in load_datasets(config.DATA_DIR).products.values()]
+_REPLACEMENT_CUE = re.compile(
+    r"\b(instead|alternative|substitute|replacement|in place of|swap|as close as|closest thing)\b", re.IGNORECASE
 )
+
+
+def never_presented_as_substitute(results: list[TurnResult]) -> str | None:
+    """No sentence offers a catalog product as a replacement for the requested product type.
+
+    Naming what we do carry is fine ("I can help with backpacks or other gear"); framing a
+    specific product as standing in for the missing one is not ("try the backpack instead").
+    """
+    for i, r in enumerate(results):
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", r.reply):
+            if _REPLACEMENT_CUE.search(sentence):
+                named = [n for n in _CATALOG_NAMES if n.lower() in sentence.lower()]
+                if named:
+                    return f"turn {i}: presented {named} as a substitute: {sentence.strip()!r}"
+    return None
+
+
+# The only catalog item that could pass for footwear; offering it in a boots conversation is a substitution.
+NO_SHOES_FOR_BOOTS = no_reply_matches(r"Wizarding Red Shoes|red shoes", "offered the teleporting shoes as footwear")
 NO_WEBSITE_REFERRAL = no_reply_matches(r"\bour (web)?site\b|\bonline store\b", "referred customer to a website")
 SAYS_NO_BOOTS = r"(don'?t|do not|doesn'?t|does not)\s+(currently\s+)?(carry|have|sell|stock|offer)|no\s+(hiking\s+)?boots|not\s+in\s+our\s+catalog"
 
@@ -215,6 +248,21 @@ SCENARIOS: list[Scenario] = [
         checks=[tool_called("list_products", by_turn=0), max_questions(turn=0, n=1), supervisor_never_blocked],
     ),
     Scenario(
+        name="product_no_repeated_clarifying_question",
+        origin="Phase 2 transcript P2: asked 'what activity are you planning?' on three consecutive turns",
+        turns=["interested in hiking boots", "men's waterproof ones", "yes please", "10.5 US"],
+        checks=[
+            tool_called("list_products", by_turn=0),
+            question_asked_at_most(
+                r"(what|which) (kind of |type of )?(outdoor )?(activity|adventure|trip|plans?)|what are you planning",
+                1,
+                "repeated the same clarifying question",
+            ),
+            never_presented_as_substitute,
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
         name="product_budget_no_prices",
         origin="D-18: catalog has no prices",
         turns=["What's your cheapest backpack? I've got about $50."],
@@ -269,7 +317,8 @@ SCENARIOS: list[Scenario] = [
             supervisor_never_blocked,
             NO_PRICES,
             NO_WEBSITE_REFERRAL,
-            NO_STRETCHED_PICKS,
+            never_presented_as_substitute,
+            NO_SHOES_FOR_BOOTS,
         ],
     ),
     Scenario(
@@ -288,7 +337,8 @@ SCENARIOS: list[Scenario] = [
             supervisor_never_blocked,
             NO_PRICES,
             NO_WEBSITE_REFERRAL,
-            NO_STRETCHED_PICKS,
+            never_presented_as_substitute,
+            NO_SHOES_FOR_BOOTS,
         ],
     ),
 ]

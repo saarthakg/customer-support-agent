@@ -29,6 +29,25 @@ python3 scripts/extract_data.py appendices.txt data
 
 The script fixes only PDF artifacts (a stray `None` line under each heading, and description strings wrapped across lines). Every value, typos included, is preserved exactly (DECISIONS D-01).
 
+## How skills work
+
+A **skill** is one feature: a journey spec (prompt text), its tools, and the values it mints. The skill list in `agent/skills/__init__.py` is the only registration point. The loop and prompt assembly never change when a skill is added.
+
+- **Skill specs override global rules (D-48).** The system prompt is voice, then global rules, then one section per skill. The global rules say explicitly that a skill's spec wins on conflict. That's how the handoff journey drops the brand's upbeat "anything else for your next adventure?" close for a plain one, without special-casing it in the global rules.
+- **Skills declare the values they mint, and the supervisor guards them (D-47).** A skill can declare `guarded_values`, for example escalation's `{"blocked_ticket": HT-…}` and Early Risers' `{"blocked_code": EARLYRISER-…}`. The supervisor combines these with the global URL pattern and blocks any match in a reply that no tool returned earlier in the conversation. The skill that creates a value knows its shape, so guarding a new kind of value (an RMA number, a gift card) is a change to that one skill, and the supervisor stays skill-agnostic.
+
+## Measured behavior
+
+Conversation scenarios run against the real model, k times each (pass^k: a scenario passes only if all k runs pass). Results from the latest run:
+
+| Scenario | Rate | What it checks |
+|---|---|---|
+| `hiking_boots_vague_start` | 5/5 | says we don't carry boots; never presents a catalog item as a replacement; no invented links, prices or website referrals |
+| `hiking_boots_size_and_price` | 5/5 | same, plus no size-availability claims |
+| `product_no_repeated_clarifying_question` | 5/5 | asks "what are you planning?" at most once across turns |
+
+The boots assertion is "never presents a catalog item as a *replacement* for the requested product type". Mentioning what we do carry ("I can help with backpacks or other gear") is allowed. An earlier, stricter version that failed on any mention of a poorly fitting product measured about 2/5. Those failures were category mentions, not substitutions, so the check was redefined to match the principle rather than tuning the prompt further (DECISIONS D-54).
+
 ## Observability
 
 Every turn appends one record to `logs/trace.jsonl`. It holds the user message, reply, outcome, supervisor result, tool calls (args, results, latency), token counts, `model`, `temperature`, and a `prompt_hash` that fingerprints the system prompt plus tool schemas. Emails are masked (`j***@example.com`) before anything is written (DECISIONS D-38).

@@ -301,3 +301,8 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 ### D-53 Identifier reuse made explicit (amends D-45) · Accepted
 - **Found:** after products were added, the mismatch scenario failed intermittently. "Please double-check both" made the model doubt the email it already had.
 - **Choice:** the spec now says that changing one value means keeping the other, that asking them to double-check doesn't erase what they gave you, and to never re-ask for a value you have. Measured 5/5 after (pass^5).
+
+### D-54 Boots check redefined to the principle; repeated questions fixed by inference · Accepted
+- **Boots:** the assertion is now "never presents a catalog item as a replacement for the requested product type". It fails only when one sentence contains replacement language ("instead", "alternative", "substitute", …) *and* a catalog product name (names derived from the catalog), or when the teleporting shoes, the only footwear-like item, are offered in a boots conversation. The old check failed on category mentions like "backpacks, energy drinks, or other essentials", which aren't substitutions; it measured about 2/5. The new check measures 5/5 for both boots scenarios. No further prompt tuning was done for this item (option a).
+- **Repeated clarifying question:** "ask each question at most once" alone measured 1/5. The root cause was that the model didn't treat "hiking boots" as already answering "what activity?". Adding "infer what you can before asking (hiking boots means hiking)" measured 5/5.
+- **No filler:** at most 3 recommendations, each tied to what the customer said, and one is fine. Novelty items that don't serve the stated need (teleporting shoes for a weekend outdoors) are named in the spec as filler.
