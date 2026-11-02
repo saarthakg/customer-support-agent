@@ -187,3 +187,13 @@ def test_enabled_skills_build_with_unique_tools(deps):
     agent = Agent(FakeLLM(), skills=build_skills(deps, SKILL_BUILDERS))
     assert {"lookup_order", "escalate_to_human"} <= agent.tools.keys()
     assert "# Skill: Order status and tracking" in agent.messages[0]["content"]
+
+
+def test_identical_repeat_calls_are_counted_across_turns():
+    llm = FakeLLM(
+        calls(("echo", '{"word": "a"}')), text("1"),
+        calls(("echo", '{"word": "a"}'), ("echo", '{"word": "b"}')), text("2"),
+    )
+    agent = Agent(llm, skills=[echo_skill()])
+    assert agent.respond("first").redundant_tool_calls == 0
+    assert agent.respond("again").redundant_tool_calls == 1  # "a" repeated, "b" is new

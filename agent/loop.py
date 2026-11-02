@@ -16,7 +16,7 @@ from agent import config
 from agent.llm import LLMError, LLMResponse, assistant_message, tool_result_message
 from agent.prompt import build_system_prompt
 from agent.registry import Skill, Tool
-from agent.supervisor import Supervisor
+from agent.supervisor import BASE_PATTERNS, Supervisor
 from agent.trace import Tracer
 
 logger = logging.getLogger(__name__)
@@ -63,6 +63,9 @@ class TurnResult:
     supervisor: str = "not_run"  # "pass" | "retried" (blocked, then fixed) | "fallback" (blocked twice) | "not_run"
     supervisor_blocked: list[str] = field(default_factory=list)  # e.g. ["blocked_url: https://..."]
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    # Calls identical (same tool, same arguments) to one made earlier in the conversation.
+    # Data is static, so these cost tokens and latency without new information.
+    redundant_tool_calls: int = 0
     model_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -90,7 +93,9 @@ class Agent:
         # traced reply can be tied to the exact prompt + tool contract that produced it.
         config_blob = json.dumps({"system": system_prompt, "tools": self.tool_schemas}, sort_keys=True)
         self.prompt_hash = hashlib.sha256(config_blob.encode()).hexdigest()[:12]
-        self.supervisor = Supervisor()
+        skill_patterns = {kind: p for s in skills for kind, p in s.guarded_values.items()}
+        self.supervisor = Supervisor({**BASE_PATTERNS, **skill_patterns})
+        self.previous_calls: set[str] = set()
         self.turn_count = 0
 
     def greet(self) -> str:
@@ -118,6 +123,8 @@ class Agent:
                     records = [self._run_tool(call.name, call.arguments) for call in response.tool_calls]
                     for call, record in zip(response.tool_calls, records):
                         result.tool_calls.append(record)
+                        if self._is_repeat(record):
+                            result.redundant_tool_calls += 1
                         self.supervisor.observe(record.result)
                         self.messages.append(tool_result_message(call.id, record.result))
                         if self.on_tool_call:
@@ -159,6 +166,13 @@ class Agent:
         result.latency_ms = int((time.monotonic() - start) * 1000)
         self._trace(user_text, result)
         return result
+
+    def _is_repeat(self, record: ToolCallRecord) -> bool:
+        args = json.dumps(record.arguments, sort_keys=True) if isinstance(record.arguments, dict) else record.arguments
+        key = f"{record.name}:{args}"
+        seen = key in self.previous_calls
+        self.previous_calls.add(key)
+        return seen
 
     def _run_tool(self, name: str, raw_arguments: str) -> ToolCallRecord:
         """Execute one tool call. Never raises: every failure becomes a structured error the model can read."""

@@ -1,8 +1,11 @@
 import json
 import re
 
+from agent.loop import SUPERVISOR_FALLBACK_REPLY, Agent
+from agent.skills import escalation
 from agent.skills.escalation import HandoffDesk
 from tests.conftest import FIXED_NOW
+from tests.fakes import FakeLLM, calls, last_tool_result, text
 
 
 def read_tickets(deps):
@@ -55,3 +58,18 @@ def test_rejects_invalid_email_and_empty_summary_without_filing(deps):
     assert desk.escalate_to_human(email="nope", summary="x") == {"ok": False, "error": "invalid_email"}
     assert desk.escalate_to_human(email="a@b.com", summary="  ") == {"ok": False, "error": "missing_summary"}
     assert not deps.handoff_log.exists()
+
+
+def test_supervisor_guards_ticket_ids_end_to_end(deps):
+    # Real escalation skill + scripted model: only the ticket ID the tool returned may reach the customer.
+    skill = escalation.build(deps)
+    args = '{"email": "bob.brown@example.com", "order_number": "W004", "summary": "Error order."}'
+
+    invented = Agent(FakeLLM(text("Done! Ticket HT-ABCDEF"), text("Ticket HT-ABCDEF")), skills=[skill])
+    assert invented.respond("escalate please").reply == SUPERVISOR_FALLBACK_REPLY
+
+    echo_real_id = lambda messages: text(f"Passed to support.\n{last_tool_result(messages)['ticket_id']}")  # noqa: E731
+    agent = Agent(FakeLLM(calls(("escalate_to_human", args)), echo_real_id), skills=[skill])
+    result = agent.respond("escalate please")
+    assert result.supervisor == "pass"
+    assert result.reply.endswith(read_tickets(deps)[0]["ticket_id"])

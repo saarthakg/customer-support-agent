@@ -1,6 +1,7 @@
 import pytest
 
-from agent.supervisor import URL_PATTERN, Supervisor, find_all
+from agent.skills.escalation import TICKET_ID_PATTERN
+from agent.supervisor import BASE_PATTERNS, URL_PATTERN, Supervisor, find_all
 
 TRACKING_URL = "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK123456789"
 
@@ -51,3 +52,26 @@ def test_plain_reply_passes():
 def test_correction_names_the_blocked_value():
     verdict = Supervisor().check("go to sierraoutfitters.com")
     assert "sierraoutfitters.com" in Supervisor.correction(verdict)
+
+
+# --- ticket IDs (declared by the escalation skill) ---
+
+TICKET_PATTERNS = {**BASE_PATTERNS, "blocked_ticket": TICKET_ID_PATTERN}
+
+
+def test_blocks_ticket_id_no_tool_returned():
+    verdict = Supervisor(TICKET_PATTERNS).check("Your ticket ID is HT-7KQ2XM.")
+    assert verdict.violations == ["blocked_ticket: HT-7KQ2XM"]
+
+
+def test_allows_ticket_id_returned_by_escalation():
+    sup = Supervisor(TICKET_PATTERNS)
+    sup.observe({"ok": True, "ticket_id": "HT-VQ5R6R"})
+    assert sup.check("I've passed this to our support team.\nHT-VQ5R6R").ok
+
+
+def test_blocks_wrong_or_malformed_ticket_ids_even_after_a_real_one():
+    sup = Supervisor(TICKET_PATTERNS)
+    sup.observe({"ok": True, "ticket_id": "HT-VQ5R6R"})
+    assert not sup.check("Your ticket is HT-VQ5R6X").ok  # one character off
+    assert not sup.check("Reference HT-12345").ok  # wrong shape is still caught

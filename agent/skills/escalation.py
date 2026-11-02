@@ -6,6 +6,7 @@ ticketing system; the tool contract would stay the same.
 """
 
 import json
+import re
 import secrets
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from agent.registry import Deps, Skill, Tool
 
 # No 0/O, 1/I/L: IDs get read aloud and retyped.
 _ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+# Deliberately looser than the real format (any length, any case) so a malformed
+# invented ID like "HT-12345" is still caught by the supervisor.
+TICKET_ID_PATTERN = re.compile(r"\bHT-[A-Z0-9]+\b", re.IGNORECASE)
 
 INSTRUCTIONS = """\
 Use escalate_to_human to pass an issue to our human support team.
@@ -25,8 +29,9 @@ Include the order number if one came up.
 - On success, say you've passed it to our support team and give the ticket_id on its own line. \
 Don't promise a response time or how they'll be contacted.
 - If they decline, respect that and ask if there's anything else you can help with.
-- Tone: something went wrong for this customer. Keep it plain and warm: no emojis, no exclamation marks, \
-no adventure sign-off."""
+- Tone: something went wrong for this customer. Keep it plain and warm: no emojis, no exclamation marks. \
+This overrides the global closing rule: if you close, use a plain "Is there anything else I can help with?", \
+never an adventure line."""
 
 
 class HandoffDesk:
@@ -89,4 +94,5 @@ def build(deps: Deps) -> Skill:
                 handler=desk.escalate_to_human,
             ),
         ),
+        guarded_values={"blocked_ticket": TICKET_ID_PATTERN},
     )

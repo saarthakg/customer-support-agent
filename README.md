@@ -36,3 +36,11 @@ Every turn appends one record to `logs/trace.jsonl`. It holds the user message, 
 `--debug` prints the same tool calls and per-turn stats inline.
 
 Model retries and timeouts use the openai client's built-in exponential backoff. The values (`MAX_RETRIES`, `REQUEST_TIMEOUT_S`, `MAX_TOOL_ITERATIONS`) live in `agent/config.py` (D-26).
+
+## Known limitations
+
+- **The order-lookup lockout is a demo control, not rate limiting.** After 3 failed lookups (failures, not attempts), the agent stops looking up orders *in that chat* and offers a handoff. It lives in process memory, so a new session resets it. Real protection needs server-side, per-identity, time-windowed limits (D-13, D-42).
+
+## Taking this to production
+
+- **An LLM supervisor layer.** The deterministic supervisor only catches what a regex can see: URLs, ticket IDs, discount codes. It can't catch prose hallucinations like "check our website's hiking boots section", which names no URL but still points the customer somewhere we can't vouch for. A second model that grades each reply against the tool results and policy would cover that class. Sierra's supervisor pattern is a checker layered over the agent, observing first and intercepting for high-risk topics. Today those prose cases are tracked as conversation-scenario checks (`NO_WEBSITE_REFERRAL`) rather than blocked.

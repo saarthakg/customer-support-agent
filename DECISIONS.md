@@ -258,3 +258,22 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 ### D-45 Remember identifiers across a failed lookup · Accepted
 - **Found:** in the first live mismatch transcript, after `order_not_found` the model asked for the email again instead of reusing it, so the lockout was never reached.
 - **Choice:** the orders journey spec tells the model to reuse earlier identifiers when the customer corrects one ("try W003"). The scenario `order_mismatch_lockout_escalates` guards it.
+
+### D-46 Lockout: 3 failures, not 3 attempts; neutral wording · Accepted
+- **Confirmed:** the cap counts failures. The 3rd lookup still runs, and a correct 3rd try succeeds. A 3rd *failure* returns `too_many_attempts` instead of `order_not_found`, so the handoff can be offered right away. Boundary tests: 2 failures then correct passes, 3 failures then blocked (even the correct pair), and a success in between doesn't reset the count.
+- **Wording:** the agent says "For security, I can't run more order lookups in this chat," then offers a handoff. The earlier "I've reached the limit" sounded like the agent had failed.
+- README states it's a session-scoped demo control, not rate limiting.
+
+### D-47 Skills declare the values they mint; the supervisor guards them · Accepted · ★ Headline
+- **Choice:** `Skill.guarded_values` maps a kind to a regex (escalation: `{"blocked_ticket": HT-…}`; Early Risers will add `blocked_code`). The loop builds one `Supervisor` from the global URL pattern plus every skill's patterns. `build_skills` rejects duplicate kinds. The ticket pattern is deliberately looser than the real format (any length, any case), so a malformed invented `HT-12345` is still caught.
+- **Alternative:** hardcode every pattern in `supervisor.py`.
+- **Why:** the skill that mints a value is the one that knows its shape. Adding a new guarded value (an RMA number, a gift-card code) stays a one-skill change, and the supervisor stays skill-agnostic.
+
+### D-48 Skill specs override global rules · Accepted
+- **Choice:** GLOBAL_RULES opens with "These apply everywhere unless a skill's spec below says otherwise; the skill spec wins." The escalation and error/lockout specs explicitly replace the adventure close with a plain "Is there anything else I can help with?".
+- **Why:** the global close-the-loop rule and the escalation tone rule conflicted, and the model resolved it by appending "…on your next adventure?" to a handoff. An explicit precedence rule settles that once, and it also covers future skills with their own tone (e.g. a VIP segment).
+
+### D-49 Redundant tool calls are counted, not prevented · Accepted
+- **Choice:** each turn record has `redundant_tool_calls`, the number of calls identical (tool and arguments) to one made earlier in the conversation. It's visible in `--debug`.
+- **Alternative:** cache results, or tell the model not to repeat.
+- **Why:** measure before optimizing. Re-lookups are harmless (static data, no side effects, idempotent issuance) and cheap at this scale. The count shows whether they're common enough to be worth a prompt rule or a result cache.

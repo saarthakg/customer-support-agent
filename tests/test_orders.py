@@ -114,3 +114,24 @@ def test_result_never_includes_email_or_full_name(lookup):
     r = lookup.lookup_order("john.doe@example.com", "W001")
     flat = str(r)
     assert "john.doe@example.com" not in flat and "John Doe" not in flat
+
+
+# --- lockout boundaries: the cap counts failures, not attempts ---
+
+def test_two_failures_then_correct_third_lookup_succeeds(lookup):
+    assert lookup.lookup_order("john.doe@example.com", "W002")["error"] == "order_not_found"
+    assert lookup.lookup_order("john.doe@example.com", "W003")["error"] == "order_not_found"
+    assert lookup.lookup_order("john.doe@example.com", "W001")["ok"]
+
+
+def test_three_failures_then_blocked(lookup):
+    errors = [lookup.lookup_order("john.doe@example.com", n)["error"] for n in ("W002", "W003", "W004")]
+    assert errors == ["order_not_found", "order_not_found", "too_many_attempts"]
+    assert lookup.lookup_order("john.doe@example.com", "W001")["error"] == "too_many_attempts"
+
+
+def test_success_does_not_reset_failure_count(lookup):
+    lookup.lookup_order("john.doe@example.com", "W002")
+    lookup.lookup_order("john.doe@example.com", "W001")  # success
+    lookup.lookup_order("john.doe@example.com", "W003")
+    assert lookup.lookup_order("john.doe@example.com", "W004")["error"] == "too_many_attempts"

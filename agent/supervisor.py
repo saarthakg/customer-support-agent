@@ -1,12 +1,13 @@
 """Deterministic check on every outgoing reply, before the customer sees it (P11).
 
-Rule: any link (or, once Early Risers exists, any discount code) in a reply must
-exactly match one that a tool returned earlier in this conversation. Invented links
-and codes are the highest-damage hallucinations, and they're cheap to catch with a
-regex. Scoped to the conversation, not the turn, so "resend that link?" still works (D-09).
+Rule: any link, ticket ID or discount code in a reply must exactly match one that
+a tool returned earlier in this conversation. Invented links and codes are the
+highest-damage hallucinations, and they're cheap to catch with a regex. Scoped to
+the conversation, not the turn, so "resend that link?" still works (D-09).
 
-The supervisor knows nothing about orders or promotions: it learns what's allowed
-by observing tool results.
+The supervisor knows nothing about orders, tickets or promotions. URLs are guarded
+globally; each skill declares the values it mints (Skill.guarded_values), and the
+supervisor learns what's allowed by observing tool results.
 """
 
 import json
@@ -23,7 +24,7 @@ URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-PATTERNS: dict[str, re.Pattern[str]] = {"blocked_url": URL_PATTERN}
+BASE_PATTERNS: dict[str, re.Pattern[str]] = {"blocked_url": URL_PATTERN}
 
 # Sentence punctuation that commonly follows a link but isn't part of it.
 _TRAILING_PUNCTUATION = ".,;:!?*_"
@@ -47,7 +48,7 @@ class Verdict:
 
 
 class Supervisor:
-    def __init__(self, patterns: dict[str, re.Pattern[str]] = PATTERNS) -> None:
+    def __init__(self, patterns: dict[str, re.Pattern[str]] = BASE_PATTERNS) -> None:
         self.patterns = patterns
         self.allowed: dict[str, set[str]] = {kind: set() for kind in patterns}
 

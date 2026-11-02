@@ -95,9 +95,14 @@ def _print_tool_call(record: ToolCallRecord) -> None:
 
 
 def _print_turn_stats(result: TurnResult) -> None:
+    extras = f" · supervisor {result.supervisor}"
+    if result.supervisor_blocked:
+        extras += f" (blocked {', '.join(result.supervisor_blocked)})"
+    if result.redundant_tool_calls:
+        extras += f" · {result.redundant_tool_calls} redundant call(s)"
     print(
         f"{DIM}  [{result.outcome} · {result.model_calls} model call(s) · "
-        f"{result.prompt_tokens}+{result.completion_tokens} tokens · {result.latency_ms} ms]{RESET}"
+        f"{result.prompt_tokens}+{result.completion_tokens} tokens · {result.latency_ms} ms{extras}]{RESET}"
     )
 
 

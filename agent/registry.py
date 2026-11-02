@@ -6,8 +6,9 @@ then add it to SKILL_BUILDERS in `agent/skills/__init__.py`. The loop and prompt
 assembly never change.
 """
 
+import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,9 @@ class Skill:
     name: str
     instructions: str  # the journey spec, inserted into the system prompt
     tools: tuple[Tool, ...]
+    # Values this skill mints that must never be invented, e.g. {"blocked_ticket": <HT-XXXXXX regex>}.
+    # The supervisor blocks any match in a reply unless one of this conversation's tool results returned it.
+    guarded_values: dict[str, re.Pattern[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -53,4 +57,7 @@ def build_skills(deps: Deps, builders: list[SkillBuilder]) -> list[Skill]:
     duplicates = {n for n in names if names.count(n) > 1}
     if duplicates:
         raise ValueError(f"duplicate tool names across skills: {sorted(duplicates)}")
+    kinds = [k for s in skills for k in s.guarded_values]
+    if len(kinds) != len(set(kinds)):
+        raise ValueError(f"duplicate guarded value kinds across skills: {sorted(kinds)}")
     return skills

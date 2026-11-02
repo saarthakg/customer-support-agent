@@ -1,16 +1,23 @@
 """Test doubles shared across test modules: a scripted model and a trivial skill."""
 
+import json
+from collections.abc import Callable
+
 from agent.llm import LLMResponse, ToolCall
 from agent.registry import Skill, Tool
 
 
 class FakeLLM:
-    """Returns pre-scripted responses in order and records what it was sent."""
+    """Returns pre-scripted responses in order and records what it was sent.
+
+    A scripted item may also be a function of the messages so far, for replies that
+    depend on what a tool returned (e.g. a randomly generated ticket ID).
+    """
 
     model = "fake-model"
     temperature = 0.0
 
-    def __init__(self, *responses: LLMResponse | Exception) -> None:
+    def __init__(self, *responses: LLMResponse | Exception | Callable[[list[dict]], LLMResponse]) -> None:
         self.responses = list(responses)
         self.seen_messages: list[list[dict]] = []
 
@@ -19,7 +26,7 @@ class FakeLLM:
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
-        return item
+        return item(messages) if callable(item) else item
 
 
 def text(content: str) -> LLMResponse:
@@ -38,3 +45,7 @@ def echo_skill(handler=None) -> Skill:
         handler=handler or (lambda word: {"ok": True, "echo": word}),
     )
     return Skill(name="Echo", instructions="Use echo when asked.", tools=(tool,))
+
+
+def last_tool_result(messages: list[dict]) -> dict:
+    return json.loads(messages[-1]["content"])
