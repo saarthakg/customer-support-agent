@@ -114,6 +114,8 @@ def _print_turn_stats(result: TurnResult) -> None:
         extras += f" (blocked {', '.join(result.supervisor_blocked)})"
     if result.redundant_tool_calls:
         extras += f" · {result.redundant_tool_calls} redundant call(s)"
+    if result.turn_context:
+        extras += f" · context: {'; '.join(result.turn_context)}"
     print(
         f"{DIM}  [{result.outcome} · {result.model_calls} model call(s) · "
         f"{result.prompt_tokens}+{result.completion_tokens} tokens · {result.latency_ms} ms{extras}]{RESET}"

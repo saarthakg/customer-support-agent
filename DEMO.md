@@ -7,7 +7,7 @@ Run top to bottom. Every step lists what to type and what you should see. Total 
 ```bash
 cd sierra-outfitters-agent        # the folder the submission zip extracts to (or your clone)
 conda deactivate 2>/dev/null; source .venv/bin/activate   # prompt shows (.venv), not (base)
-pytest -q                                                 # expect: 126 passed
+pytest -q                                                 # expect: 133 passed
 rm -rf state/                                             # fresh promo-code store for the demo
 python -m agent.main --help                               # shows --debug and --now
 ```
@@ -62,7 +62,7 @@ python -m agent.main --debug --now 2026-11-03T08:30
 ```
 The dim line `[clock frozen at 2026-11-03 08:30 AM Pacific]` confirms the override.
 Type: `Can I get the Early Risers code?`
-Expect `→ issue_early_risers_code({})` → `needs_email` (the window is checked first), then a request for the email. (Occasionally the model asks for the email before calling the tool. The outcome is the same inside the window; it's a known flake in the README.) Type `jane.smith@example.com` and expect the code `EARLYRISER-XXXXXX` on its own line with "10% off".
+Expect a request for your email (no code yet). The `--debug` stats line shows `context: Early Risers status: OPEN until 10:00 AM PT`, a fact computed by code each turn; the model never sees the clock. Type `jane.smith@example.com` and expect the code `EARLYRISER-XXXXXX` on its own line with "10% off".
 
 **Idempotency across a restart.** Type `quit`, then run the same command again (`--now 2026-11-03T08:30`).
 Type: `Hi, I'd like the Early Risers code. My email is Jane.Smith@example.com`
@@ -73,7 +73,7 @@ Expect **the same code** and `"already_issued": true` in the tool result. The ca
 python -m agent.main --debug --now 2026-11-03T14:20
 ```
 Type: `Do you have any discounts right now?` and then `yes please`
-Expect a mention of Early Risers with its hours (only because they asked about discounts), then `→ issue_early_risers_code({})` → `outside_promo_window`, with "it's 2:20 PM PT", and no request for an email. (Measured 5/6: occasionally the model asks for an email first. If it does, say so, and point to it in the README's known flakes. It's an honest example of why reliability is reported as pass^k.)
+Expect a mention of Early Risers with its hours (only because they asked about discounts) and that it's closed right now, with **no request for an email**. The model was told `Early Risers status: CLOSED`, so it doesn't need to call the tool. If it did, the tool would refuse anyway: code enforces the window.
 
 **Boundaries.** The same request at each time shows the half-open window:
 ```bash
@@ -84,7 +84,7 @@ done
 ```
 Expect no code at 7:59, a code at 8:00 and 9:59, and no code at 10:00.
 
-*Talking point:* the model is never told the time. Eligibility, the code and idempotency are all in `early_risers.py`, and its tests cover 7:59:59, 8:00, 9:59:59, 10:00 and DST.
+*Talking point:* the model is never told the time, only a code-computed fact (OPEN or CLOSED) each turn. Eligibility, the code and idempotency are all in `early_risers.py`, and its tests cover 7:59:59, 8:00, 9:59:59, 10:00 and DST.
 
 ## 5. Observability
 

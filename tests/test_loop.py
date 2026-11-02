@@ -1,7 +1,7 @@
 """Loop mechanics against a scripted fake model: no network, fully deterministic."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -198,3 +198,35 @@ def test_identical_repeat_calls_are_counted_across_turns():
     agent = Agent(llm, skills=[echo_skill()])
     assert agent.respond("first").redundant_tool_calls == 0
     assert agent.respond("again").redundant_tool_calls == 1  # "a" repeated, "b" is new
+
+
+# --- per-turn context from skills (D-64) ---
+
+def test_turn_context_is_sent_to_model_but_never_stored(deps, tmp_path):
+    import dataclasses
+    from agent.skills import early_risers
+    from agent.trace import Tracer
+
+    eight_thirty = datetime(2026, 11, 3, 16, 30, tzinfo=timezone.utc)  # 08:30 PT
+    skill = early_risers.build(dataclasses.replace(deps, now=lambda: eight_thirty))
+    llm = FakeLLM(text("Hi!"))
+    agent = Agent(llm, skills=[skill], tracer=Tracer(tmp_path / "t.jsonl", "s"))
+    result = agent.respond("hello")
+
+    sent = llm.seen_messages[0]
+    assert sent[1]["role"] == "system" and "Early Risers status: OPEN until 10:00 AM PT" in sent[1]["content"]
+    # History holds only the base prompt, the user message and the reply: the context note was never stored.
+    assert [m["role"] for m in agent.messages] == ["system", "user", "assistant"]
+    assert not any(str(m["content"]).startswith("Current status") for m in agent.messages)
+    assert result.turn_context == ["Early Risers status: OPEN until 10:00 AM PT"]
+    assert json.loads((tmp_path / "t.jsonl").read_text())["turn_context"] == result.turn_context
+
+
+def test_prompt_hash_is_stable_across_clock_times(deps):
+    import dataclasses
+    from agent.skills import early_risers
+
+    at = lambda h: datetime(2026, 11, 3, h, 0, tzinfo=timezone.utc)  # noqa: E731
+    closed = Agent(FakeLLM(), skills=[early_risers.build(dataclasses.replace(deps, now=lambda: at(15)))])
+    open_ = Agent(FakeLLM(), skills=[early_risers.build(dataclasses.replace(deps, now=lambda: at(17)))])
+    assert closed.prompt_hash == open_.prompt_hash

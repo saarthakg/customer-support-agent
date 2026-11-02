@@ -3,7 +3,7 @@
 Each entry records the choice, the alternative considered, and the reason. Entries are added when a decision is made, not reconstructed at the end.
 Every entry is **Accepted** (final). **★ Headline** marks the decisions the README's design section leads with.
 
-How to read this log: it was written as the work happened, in the order of the build (planning, core loop, then one skill at a time), and each section heading names that stage. References such as `P1`–`P13` and `§3` point to the author's private engineering-principles document, which isn't included. Each entry states its own reasoning, so it can be read without that document. Entries D-01–D-25 were made during planning and reviewed before any code was written.
+Entries were written as the work happened, in build order: planning, the core loop, then one skill at a time, then fixes found in live testing.
 
 ---
 
@@ -16,13 +16,13 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ### D-02 Tags are not sent to the model · Accepted
 - **Choice:** `list_products` returns `sku, name, description, inventory, low_stock` and omits `Tags`.
-- **Alternative:** send tags as hints (§0.1 allows a pre-filter that never excludes on tags alone).
+- **Alternative:** send tags as hints, or a light pre-filter that never excludes on tags alone.
 - **Why:** tags are wrong in ways that produce exactly the claims we must not make: the energy drink is tagged `Weatherproof`, the jetpack `Safety-Enhanced`, the hairbrush `Trail`. Descriptions are the only grounding. Omitting tags removes the temptation instead of prompting against it. At catalog scale, tags would be cleaned and used as retrieval filters.
 
 ### D-03 Low stock is a code-computed flag · Accepted
 - **Choice:** `low_stock = inventory <= 20` is computed in code. The agent may say "only a few left" when the flag is set, and gives exact counts only if asked. It never invents restock or shipping dates.
 - **Alternative:** let the model decide what "low" means from the raw number.
-- **Why:** P1. A threshold is a business rule, and the model shouldn't choose a value code can compute.
+- **Why:** a threshold is a business rule, and the model shouldn't choose a value code can compute.
 
 ---
 
@@ -35,32 +35,33 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ### D-05 Skill = instructions + tools; registry is one list · Accepted · ★ Headline
 - **Choice:** each `skills/<name>.py` exposes `build(deps) -> Skill`. `registry.py` holds `SKILL_BUILDERS = [orders.build, products.build, early_risers.build]`. The prompt and tool list are assembled from it. Adding a feature means one new file plus one line, and the loop never changes.
-- **Alternative:** module-level globals or decorator auto-discovery (a plugin system, which §4 rules out).
+- **Alternative:** module-level globals or decorator auto-discovery (a plugin system, more machinery than four skills need).
 - **Why:** dependencies (datasets, clock, code store) are explicit and injectable for tests, and registration is visible in one place.
 
 ### D-06 Single `list_products` tool, no `get_product` · Accepted
 - **Choice:** one tool that returns the compact catalog (10 items).
-- **Alternative:** `list_products` + `get_product(sku)` as P3 sketches.
+- **Alternative:** `list_products` + `get_product(sku)`.
 - **Why:** with 10 items, `get_product` duplicates data `list_products` already returns. It's a natural live extension (e.g. an inventory-check skill), not core.
 
 ### D-07 Status meanings live in code · Accepted
 - **Choice:** a `STATUS_INFO` dict in `skills/orders.py` maps each of the four statuses to a factual customer-facing meaning, and the tool returns it. *How* to say it (empathy, emoji rules) lives in the journey spec.
 - **Alternative:** let the model interpret `fulfilled` / `error` itself.
-- **Why:** P7. The model would improvise different meanings each run, and §0.1 requires explicit definitions.
+- **Why:** the model would improvise different meanings each run. Customer-facing status meanings should be defined once, in code.
 
 ### D-08 No current time in the system prompt · Accepted · ★ Headline
 - **Choice:** the model is never told the time. Promo eligibility is learned only from the tool result.
 - **Alternative:** inject "current time: 9:12 AM PT" into the prompt.
-- **Why:** with the time in context, the model would decide eligibility itself and skip the tool, which defeats P1/P8. The tool result includes the current PT time so the model can phrase "it's 7:42 AM PT, so check back at 8".
+- **Why:** with the time in context, the model would decide eligibility itself and skip the tool, which defeats the point of computing eligibility in code. The tool result includes the current PT time so the model can phrase "it's 7:42 AM PT, so check back at 8".
+- **Amended by D-64:** the raw clock still never enters the prompt, but a code-computed eligibility fact (OPEN or CLOSED) is sent each turn.
 
 ### D-09 Supervisor allow-list = values from tool results in this conversation · Accepted · ★ Headline
-- **Choice:** any URL or code-shaped token in an outgoing reply must appear in a tool result from *this conversation*. P11 originally said "this turn" for URLs and "in the issued-codes store" for codes. AGENT_PRINCIPLES.md P11 has been updated to match.
-- **Alternative:** P11 as originally written.
+- **Choice:** any URL or code-shaped token in an outgoing reply must appear in a tool result from *this conversation*. The first design said "this turn" for URLs and "in the issued-codes store" for codes.
+- **Alternative:** that first design.
 - **Why:** "this turn" would block a legitimate "can you resend that link?" one turn later. Store-wide would let a code issued to *another* customer pass. Session-scoped tool output is stricter than the store and looser than the turn, and it's one rule for both URLs and codes.
 
 ### D-10 Dataclasses, not pydantic · Accepted
 - **Choice:** `dataclasses` for records and skills, with plain dicts for tool results (they're JSON anyway).
-- **Alternative:** pydantic (P13 allows either).
+- **Alternative:** pydantic.
 - **Why:** pydantic isn't in the approved dependency list.
 
 ---
@@ -70,12 +71,12 @@ How to read this log: it was written as the work happened, in the order of the b
 ### D-11 Order-number normalization · Accepted
 - **Choice:** in code, accept `W001`, `#W001`, `w001`, ` #W001 `, `order #W001`, and bare digits `1` / `001` → `#W001`. Anything else → `invalid_order_number`.
 - **Alternative:** exact match only, or let the model normalize.
-- **Why:** P3. Bare digits are unambiguous because every order uses the `W` prefix. If real data had several prefixes, we'd drop that rule.
+- **Why:** normalization is code's job, not the model's. Bare digits are unambiguous because every order uses the `W` prefix. If real data had several prefixes, we'd drop that rule.
 
 ### D-12 One generic error for not-found and mismatch · Accepted · ★ Headline
 - **Choice:** the tool returns `order_not_found` whether the order doesn't exist or exists under a different email. The agent asks the customer to double-check both, with one message. The tool never returns any data from a non-matching record.
 - **Alternative:** "that email doesn't match this order."
-- **Why:** P6. A distinct message is an enumeration oracle for emails and order numbers.
+- **Why:** order details go only to someone who knows both identifiers. A distinct message is an enumeration oracle for emails and order numbers.
 
 ### D-13 Cap failed lookups per session · Accepted
 - **Choice:** after 3 failed lookups in a session, the tool returns `too_many_attempts`. The agent stops retrying and *offers escalation* (D-16) instead of hitting a dead end.
@@ -89,10 +90,10 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ### D-15 `error` = apologize, no speculation, human handoff, no emojis · Accepted
 - **Choice:** templated meaning: "There's a problem with this order that I can't resolve here; a member of our support team needs to look at it." No guessed cause (payment, stock…), no exuberance, no emojis, no link.
-- **Why:** P5/P9, the highest-empathy path.
+- **Why:** it's the highest-empathy path: tone gives way to clarity, and the honest next step is a person.
 
 ### D-16 Minimal human-handoff skill, built now · Accepted · ★ Headline
-- **Conflict resolved:** P9 requires a human-handoff offer on the error path, and §3 forbids claiming actions that didn't happen. With no handoff mechanism, the offer would be hollow.
+- **Conflict resolved:** the error path should end in a human-handoff offer, and the agent must never claim actions that didn't happen. With no handoff mechanism, the offer would be hollow.
 - **Choice:** an `escalation` skill with `escalate_to_human(email, order_number, summary)`. It appends a ticket to `logs/handoffs.jsonl` and returns a `ticket_id`. It's used on the `error`-status path and when the lookup cap (D-13) is hit, offered first and filed when the customer agrees. The agent can then truthfully say "I've passed this to our support team; your ticket is HT-XXXXXX."
 - **Detail:** on the lookup-cap path the order number is unverified by definition. The tool records `verified: true/false` (computed in code by matching email and order) so support knows what they're getting. The model never asserts verification.
 - **Alternative:** honest "please contact support" wording with no tool, leaving escalation as a live extension.
@@ -100,7 +101,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ### D-17 Ordered SKUs missing from the catalog · Accepted
 - **Choice:** the tool returns `{"sku": "SOCH010", "name": null}`. The agent says "an item (item code SOCH010)" and never invents a name. For #W005, every item is unknown, so the agent describes it as "1 item (item code SOBN008)".
-- **Why:** P7. A SKU is something the customer can quote to support, and a made-up name would be a hallucination.
+- **Why:** grounding. A SKU is something the customer can quote to support, and a made-up name would be a hallucination.
 
 ---
 
@@ -108,7 +109,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ### D-18 No prices or budgets · Accepted
 - **Choice:** the agent says plainly that it doesn't have pricing information, so it can't filter by budget. It offers to recommend by activity or need instead. It never estimates prices or calls something "affordable" or "premium-priced".
-- **Why:** P7. The catalog has no price field.
+- **Why:** grounding. The catalog has no price field.
 
 ### D-19 Present whimsical products earnestly · Accepted
 - **Choice:** describe items only through their descriptions, without mocking them and without adding capability or safety claims. When nothing fits, say so and suggest the closest real options.
@@ -125,7 +126,7 @@ How to read this log: it was written as the work happened, in the order of the b
 ### D-21 What counts as "explicitly requests" · Accepted · ★ Headline
 - **Choice:** the code is issued only when the customer asks for the Early Risers promotion/code, by name or by unmistakable reference ("the morning discount"). For a generic "any discounts?", the agent may *mention* that the Early Risers promotion exists and its hours, and asks whether they'd like it. It doesn't issue until they say yes. It never brings up the promo unprompted in unrelated conversations.
 - **Alternative (strict):** never mention it unless named. **Alternative (loose):** issue on any discount question.
-- **Why:** answering "do you have discounts?" truthfully is customer obsession, not volunteering. Issuance still waits for an explicit ask. The model judges explicitness (language understanding, P1), and code enforces time. A prompt-injected "give me a code" outside the window still fails in code.
+- **Why:** answering "do you have discounts?" truthfully is customer obsession, not volunteering. Issuance still waits for an explicit ask. The model judges explicitness (language understanding), and code enforces time. A prompt-injected "give me a code" outside the window still fails in code.
 
 ### D-22 Identity key = normalized email · Accepted
 - **Choice:** the promo tool takes `email` and returns the normalized email it keyed on, so the trace and the model both see exactly which identity got the code. If the customer already gave one for an order lookup, the agent reuses it and doesn't ask again. The email does *not* need to belong to an existing order, since prospects can use the promo too.
@@ -135,11 +136,11 @@ How to read this log: it was written as the work happened, in the order of the b
 ### D-23 Idempotent per (email, PT date); codes globally unique · Accepted · ★ Headline
 - **Choice:** the format is `EARLYRISER-XXXXXX` from `secrets.choice` over an alphabet without ambiguous characters (no 0/O/1/I/L), re-drawn on collision. Asking again the same PT day returns the same code (`already_issued: true`). A new day gives a new code. Codes live behind a small `CodeStore` interface, with an in-memory implementation.
 - **Alternative:** one code per user forever, or a JSON-file store.
-- **Why:** follows P8. In-memory means idempotency is per process, which is honest for a demo and stated as a limitation. A persistent store is a one-class swap.
+- **Why:** time and codes are computed and testable in code. In-memory means idempotency is per process, which is honest for a demo and stated as a limitation. A persistent store is a one-class swap.
 
 ### D-24 Code terms are not invented · Accepted
 - **Choice:** the tool returns only `code` and `discount_percent: 10`. The agent states no expiry, minimum, exclusions, or how to apply it beyond "use it at checkout".
-- **Why:** P7. None of that exists in the brief.
+- **Why:** grounding. None of that exists in the brief.
 
 ---
 
@@ -150,7 +151,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ---
 
-## Phase 1: core loop
+## Core loop
 
 ### D-26 Retries and timeouts via the openai client's built-ins · Accepted
 - **Choice:** `OpenAI(timeout=30, max_retries=2)`. The client already retries 429/5xx/connection errors with exponential backoff. `llm.py` converts any remaining `OpenAIError` into our own `LLMError`.
@@ -165,7 +166,7 @@ How to read this log: it was written as the work happened, in the order of the b
 ### D-28 Tool arguments are validated at the loop boundary · Accepted
 - **Choice:** before calling a handler, the loop checks that the arguments parse as a JSON object and contain the schema's `required` keys, and it drops keys not in `properties`. Unknown tool, bad JSON, missing args and handler exceptions all become `{"ok": false, "error": ...}` results the model can recover from. Handlers stay plain typed functions that are testable directly.
 - **Alternative:** let `TypeError` from `handler(**args)` signal bad args (it would also swallow real bugs inside handlers).
-- **Why:** P3. Structured errors, never raised into the loop. The one `except Exception` is a documented boundary.
+- **Why:** tools return structured errors the model can recover from; nothing is raised into the loop. The one `except Exception` is a documented boundary.
 
 ### D-29 Fixed greeting, not model-generated · Accepted
 - **Choice:** the opener is a constant, added to history as the assistant's first message.
@@ -185,7 +186,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ---
 
-## Phase 1 review fixes
+## Core loop: fixes from early live testing
 
 ### D-33 Startup checks with a one-line fix · Accepted
 - **Choice:** `main.py` checks the Python version and catches `ModuleNotFoundError` *before* importing third-party code. A missing `OPENAI_API_KEY` is also caught. Each prints a one-line fix, and the process exits 1.
@@ -200,7 +201,7 @@ How to read this log: it was written as the work happened, in the order of the b
 - **Choice:** the greeting lists only order status and product help. GLOBAL_RULES tells the model to describe only those two when introducing itself, and to discuss promotions only when the customer asks about discounts. A unit test guards the greeting, and the self-introduction was checked live (3/3 runs clean).
 - **Why:** D-21 already said "never unprompted", and the greeting was a contradiction of our own making. A scope list in the prompt is also something the model reads as a menu to recite.
 
-### D-36 Grounding rule plus deterministic URL check, pulled forward from Phase 3 · Accepted · ★ Headline
+### D-36 Grounding rule plus deterministic URL check · Accepted · ★ Headline
 - **Found:** with no tools enabled, the model invented three boot products, size availability, prices, and a `sierraoutfitters.com` link. Every turn was traced as `"ok"` (sessions 9cd1151d, 009a475d, exhibited in `docs/before_grounding.md`).
 - **Choice:** (1) GLOBAL_RULES: "If no tool provides a fact, say plainly that you can't help with that here", plus an explicit never-invent list (products, links, prices, sizes, specs, availability, dates, codes). (2) `supervisor.py`: every URL in a final reply must exactly match a URL from a tool result earlier in this conversation. On a block, the bad draft is replaced in history by a corrective system note and the model gets one retry. A second block shows a fixed, honest fallback, and the turn is rolled back (D-27).
 - **Detection:** scheme or `www.` links, plus bare domains with common TLDs, with a lookbehind so emails don't count. Trailing sentence punctuation is stripped. Markdown links are handled.
@@ -212,7 +213,7 @@ How to read this log: it was written as the work happened, in the order of the b
 ### D-37 Trace records carry supervisor outcome and an agent-config fingerprint · Accepted
 - **Found:** `outcome` alone marked the invented-URL turns as `"ok"`.
 - **Choice:** each record adds `supervisor` (`pass` / `retried` / `fallback` / `not_run`) plus `supervisor_blocked`, a list of `"<kind>: <value>"` such as `"blocked_url: https://…"` (and `blocked_code` once Early Risers exists). It also adds `model`, `temperature`, and `prompt_hash`: the first 12 hex characters of the SHA-256 of the system prompt plus tool schemas.
-- **Alternative:** a single `supervisor` field with five values (pass / blocked_url / blocked_code / retried / fallback), as in the review note.
+- **Alternative:** a single `supervisor` field with five values (pass / blocked_url / blocked_code / retried / fallback), as first proposed.
 - **Why split:** "what happened" (pass, retried, fallback) and "what was blocked" (url, code) vary independently. A retry can follow a blocked URL *or* code, and one draft can contain both. A status plus a list records that without combinatorial values. `not_run` covers turns that failed before a final reply (API error, iteration cap).
 - **Why the hash:** a prompt or tool-description edit changes behavior as much as a model change. With the hash, any traced reply can be tied to the exact agent configuration. That's the cheap version of immutable versioned releases.
 
@@ -229,7 +230,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ---
 
-## Phase 2: orders and escalation
+## Orders and escalation
 
 ### D-40 Enabled-skill list lives in `agent/skills/__init__.py` (amends D-05) · Accepted
 - **Choice:** `SKILL_BUILDERS` moved from `registry.py` to `agent/skills/__init__.py`. `registry.py` keeps only the `Tool` / `Skill` / `Deps` types and `build_skills()`.
@@ -250,10 +251,10 @@ How to read this log: it was written as the work happened, in the order of the b
 - The ticket ID is `HT-` plus 6 characters from an alphabet without 0/O/1/I/L, because it gets read aloud.
 - The escalation journey uses a plain tone: no emojis, no exclamation marks.
 
-### D-44 "Ask for what's missing" wording (deviates from §3's literal "one thing at a time") · Accepted
+### D-44 "Ask for what's missing" wording (instead of a literal "one thing at a time") · Accepted
 - **Found:** the prompt rule "Ask for exactly what is missing, one thing at a time" made the model say "Just one at a time, please" to customers.
 - **Choice:** "Ask only for what you're missing, in one short question (e.g. if you have the order number, ask only for the email). Never ask again for something the customer already gave you, and never tell them how to pace or format their answers."
-- **Why:** §3's intent, shown by its own example, is "don't re-ask for what you have". The literal "one at a time" got echoed to customers as an instruction. With both identifiers missing, the model still tends to ask for one and then the other. That's acceptable, and it's a Phase 4 voice-tuning candidate.
+- **Why:** the intent is "don't re-ask for what you have". The literal "one at a time" got echoed to customers as an instruction. (Asking for both identifiers in one message when neither is known was added later.)
 
 ### D-45 Remember identifiers across a failed lookup · Accepted
 - **Found:** in the first live mismatch transcript, after `order_not_found` the model asked for the email again instead of reusing it, so the lockout was never reached.
@@ -280,7 +281,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ---
 
-## Phase 2: products
+## Products
 
 ### D-50 Products tool contract · Accepted
 - **Choice:** `list_products()` takes no arguments and returns all 10 products as `{sku, name, description, inventory, low_stock}`, plus `catalog_notes`: "no prices, sizes, colors or shipping information". Descriptions are passed through exactly as in the data. Tags are withheld (D-02), and `low_stock = inventory <= 20` is computed in code (D-03).
@@ -309,7 +310,7 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ---
 
-## Phase 2: Early Risers
+## Early Risers
 
 ### D-55 Clock and `--now` · Accepted
 - **Choice:** `agent/clock.py` holds `PACIFIC` (zoneinfo), `system_clock`, `parse_now` and `fixed_clock`. `--now` *freezes* the clock. An ISO time without an offset is read as Pacific (`--now 2026-11-03T08:30`), because that's how a demo thinks about the window. Explicit offsets are respected. When the clock is overridden, the CLI always prints a dim `[clock frozen at … Pacific]` line, not only in `--debug`.
@@ -338,12 +339,12 @@ How to read this log: it was written as the work happened, in the order of the b
 
 ---
 
-## Pre-README fixes
+## Early Risers and voice: fixes from live testing
 
 ### D-61 JSON-backed code store for the CLI · Accepted
 - **Confirmed:** the earlier transcripts showing different codes for jane.smith (`…WG964W`, `…TVAMB3`) came from separate processes, each with its own in-memory store, so "different code" was expected, not an idempotency bug. But a CLI restart forgot every code, which undercuts "same customer, same day, same code" in a live demo.
 - **Choice:** `JsonCodeStore` (the in-memory store plus load-on-start and save-on-write, with an atomic temp-file rename) at `state/issued_codes.json`. That folder is git-ignored, so it's excluded from the `git archive` zip. The CLI uses it; tests and scenarios keep `InMemoryCodeStore` so runs stay independent. Verified by restarting the CLI with the same `--now`: the second process returns the same code with `already_issued: true`. Delete `state/` to reset a demo.
-- **Alternative:** SQLite (heavier, and a DB is out of scope per §4).
+- **Alternative:** SQLite (heavier; a database is more than this needs).
 
 ### D-62 Window first, email optional · Accepted
 - **Found:** the agent would ask for an email and then decline because of the time. Separately, one live run answered an explicit request *with* an email by asking "May I check the current Pacific time for you?" instead of calling the tool (session 454020c7).
@@ -354,3 +355,16 @@ How to read this log: it was written as the work happened, in the order of the b
 - **Choice:** VOICE now says happy-path replies *always* carry one outdoors phrase plus 1–2 emojis, after the substance (link or code first, on its own line). Problem paths (order error, security limit, handoff, frustration) stay plain: no emojis, no adventure phrases.
 - **Checks:** `voiced(turn)` (1–2 emojis and an outdoors word) on the happy-path turns of 10 scenarios. `on_own_line` for tracking links and codes. `NO_EMOJI` on the error and lockout paths. These are cheap proxies for "correct tone" that catch regressions. They don't grade quality.
 - **Result (full suite, k=2, one pass, no follow-up tuning):** 21/22 scenarios pass^2, 43/44 runs. The miss was `order_error_escalates` 1/2: the model added an unprompted "Just to confirm, your email is … and order W004?" step before looking up, so the 3-turn script ended before the escalation. The error-path tone was correct in both runs. Reported, not chased.
+
+### D-64 Code-computed eligibility fact each turn (amends D-08) · Accepted · ★ Headline
+- **Found:** even with the window checked first (D-62), the model still often asked for an email before calling the promo tool. Outside the window that meant asking for personal data and then declining: measured 5/6 on the outside-window scenario, 3/6 inside.
+- **Choice:** a skill may provide `turn_context`, a function evaluated by code on every model call. Early Risers returns `Early Risers status: OPEN until 10:00 AM PT` or `Early Risers status: CLOSED (runs 8:00-10:00 AM PT)`. The loop sends it as a separate system message right after the base prompt. It's never stored in history (a stale "OPEN" can't linger) and never part of the base prompt (so `prompt_hash` is identical at every hour; there's a test for that). It's recorded per turn in the trace (`turn_context`) and shown in `--debug`. The tool still enforces the window: the status line informs the model, the code decides.
+- **D-08, amended:** the *raw clock* stays out of the prompt (the model would start doing time arithmetic). A *fact computed in code* goes in. That's the same split as everywhere else: code computes, the model phrases.
+- **Alternative:** few-shot examples in the prompt (a probabilistic fix for a deterministic fact), or a two-step tool.
+- **Result (k=6):** `promo_generic_discount_outside_window` 5/6 → 6/6; DEMO step 4c clean in 3/3 live CLI runs. Told CLOSED, the model now answers with the hours and no email request, usually without calling the tool, which is correct, since no code can be issued without it.
+- **Generic by design:** a future skill (store hours "open now", a flash sale, a VIP tier) gets per-turn facts the same way, with no loop change.
+
+### D-65 In-window promo check now tests the outcome, not the path · Accepted
+- **Found:** with OPEN in context, all 6 runs asked for the email directly instead of calling the tool first and getting `needs_email`. That's the efficient path: open, need an email, ask for it. The old check required the `needs_email` round trip. A separate regression appeared while adding D-64: "Would you like me to issue the code?" after an explicit request. It came from the new spec line meant for general discount questions and was fixed by scoping that line.
+- **Choice:** the spec says to ask for the email if you don't have it, then call the tool (`needs_email` remains the tool's guard). The scenario checks what the customer experiences: no code before the email, the email asked for, no re-asking whether they want the code, then the code issued verbatim on its own line. Same reasoning as D-58: test what the customer sees, not which internal path the model took.
+- **Result (k=6):** `promo_explicit_request_in_window` 6/6.

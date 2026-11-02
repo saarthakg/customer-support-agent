@@ -156,3 +156,23 @@ def test_json_store_survives_restart(tmp_path):
     again = EarlyRisers(now=lambda: pt(9, 45), store=JsonCodeStore(path)).issue_early_risers_code(EMAIL)
     assert again["code"] == first["code"] and again["already_issued"] is True
     assert JsonCodeStore(path).exists(first["code"])
+
+
+# --- per-turn eligibility fact (D-64) ---
+
+@pytest.mark.parametrize(
+    "moment, expected",
+    [
+        (pt(7, 59, 59), "Early Risers status: CLOSED (runs 8:00-10:00 AM PT)"),
+        (pt(8, 0, 0), "Early Risers status: OPEN until 10:00 AM PT"),
+        (pt(9, 59, 59), "Early Risers status: OPEN until 10:00 AM PT"),
+        (pt(10, 0, 0), "Early Risers status: CLOSED (runs 8:00-10:00 AM PT)"),
+    ],
+)
+def test_status_line_matches_the_window(moment, expected):
+    assert promo_at(moment).status_line() == expected
+
+
+def test_status_line_never_contains_the_raw_time():
+    assert ":30" not in promo_at(pt(8, 30)).status_line()
+    assert "2:20" not in promo_at(pt(14, 20)).status_line()

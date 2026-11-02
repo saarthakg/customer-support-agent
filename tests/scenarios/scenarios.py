@@ -69,6 +69,14 @@ def tool_returned(name: str, **fields: object) -> Check:
     return check
 
 
+def tool_not_returned_ok(name: str) -> Check:
+    """No call to `name` succeeded (e.g. no promo code was issued)."""
+    def check(results: list[TurnResult]) -> str | None:
+        hits = [i for i, r in enumerate(results) if any(c.name == name and c.result.get("ok") for c in r.tool_calls)]
+        return f"{name} succeeded on turn(s) {hits}" if hits else None
+    return check
+
+
 def tool_not_called(name: str) -> Check:
     def check(results: list[TurnResult]) -> str | None:
         hits = [i for i, r in enumerate(results) if any(c.name == name for c in r.tool_calls)]
@@ -166,6 +174,13 @@ def on_own_line(name: str, key: str) -> Check:
                         return f"turn {i}: {key} not on its own line"
         return None
     return check
+
+
+def no_unconfirmed_offer_after_explicit_request(results: list[TurnResult]) -> str | None:
+    """After an explicit ask, don't ask 'would you like the code?' again (a regression seen while adding D-64)."""
+    if re.search(r"would you like (me to (issue|get)|the|a) .{0,30}code", results[0].reply, re.IGNORECASE):
+        return f"turn 0: re-asked whether they want the code: {results[0].reply[:80]!r}"
+    return None
 
 
 def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
@@ -318,9 +333,11 @@ SCENARIOS: list[Scenario] = [
         checks=[
             voiced(turn=1),
             on_own_line("issue_early_risers_code", "code"),
-            # D-62: call immediately without an email; the tool checks the window, then says needs_email.
-            tool_returned("issue_early_risers_code", error="needs_email"),
+            # D-65: told OPEN, asking for the email directly is the efficient path (needs_email is the guard).
+            # What matters: no code before the email, the email is asked for, then the code is issued.
+            tool_not_called_on_turn("issue_early_risers_code", 0),
             some_reply_matches(r"e-?mail", "asks for the email", within_turns=1),
+            no_unconfirmed_offer_after_explicit_request,
             tool_returned("issue_early_risers_code", ok=True, email="jane.smith@example.com", already_issued=False),
             reply_contains_tool_value("issue_early_risers_code", "code"),
             supervisor_never_blocked,
@@ -353,8 +370,10 @@ SCENARIOS: list[Scenario] = [
         now="2026-11-03T10:00",
         turns=["Can I have the Early Risers promo code? My email is john.doe@example.com"],
         checks=[
-            tool_returned("issue_early_risers_code", error="outside_promo_window"),
+            # D-64: told CLOSED, the model may answer without calling the tool; either way, no code.
+            tool_not_returned_ok("issue_early_risers_code"),
             no_reply_matches(PROMO_CODE, "showed a code outside the window"),
+            no_reply_matches(r"e-?mail", "asked for an email outside the window"),
             some_reply_matches(
                 r"8(:00)?\s*(AM|a\.m\.)?\s*(-|–|to|and)\s*10(:00)?", "states the 8-10 window", within_turns=1
             ),
@@ -384,7 +403,7 @@ SCENARIOS: list[Scenario] = [
         checks=[
             tool_not_called_on_turn("issue_early_risers_code", 0),
             some_reply_matches(r"early risers", "mentions the Early Risers promotion", within_turns=1),
-            tool_returned("issue_early_risers_code", error="outside_promo_window"),
+            tool_not_returned_ok("issue_early_risers_code"),
             no_reply_matches(r"e-?mail", "asked for an email outside the window"),
             no_reply_matches(PROMO_CODE, "showed a code outside the window"),
             supervisor_never_blocked,

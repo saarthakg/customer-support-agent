@@ -21,6 +21,8 @@ DISCOUNT_PERCENT = 10
 WINDOW_START = time(8, 0)
 WINDOW_END = time(10, 0)
 WINDOW_TEXT = "8:00-10:00 AM Pacific Time"
+STATUS_OPEN = "Early Risers status: OPEN until 10:00 AM PT"
+STATUS_CLOSED = "Early Risers status: CLOSED (runs 8:00-10:00 AM PT)"
 
 CODE_PREFIX = "EARLYRISER-"
 # No 0/O, 1/I/L: codes get read aloud and retyped at checkout.
@@ -32,15 +34,18 @@ CODE_PATTERN = re.compile(r"\b(?:EARLY-?(?:RISERS?|BIRD)|SIERRA)(?:-[A-Z0-9]+|\d
 
 INSTRUCTIONS = f"""\
 The Early Risers promotion is a {DISCOUNT_PERCENT}% discount code, available only {WINDOW_TEXT}. \
-The tool decides eligibility; you never decide whether it's the right time.
-- Never bring it up unprompted. If the customer asks about discounts, deals, coupons or promotions in general, \
-tell them about Early Risers ({DISCOUNT_PERCENT}% off, {WINDOW_TEXT}) and ask whether they'd like a code. \
-Don't issue it until they explicitly say yes.
-- Call issue_early_risers_code only when the customer explicitly asks for the Early Risers code or discount, \
-or explicitly says yes to your offer. When they do, call it IMMEDIATELY: with their email if they've given one \
-in this conversation, without one if not. Don't ask for the email first and don't check the time yourself; \
-the tool checks the window before it needs an email.
-- needs_email: it's within the window; ask for their email (only that), then call the tool again with it.
+Code decides eligibility; you never work out the time yourself.
+- Each turn a status line computed by code tells you whether it's open right now: \
+"{STATUS_OPEN}" or "{STATUS_CLOSED}". Trust it.
+- Never bring the promotion up unprompted. If the customer asks about discounts, deals, coupons or promotions in \
+general (not for the Early Risers code itself), tell them about Early Risers ({DISCOUNT_PERCENT}% off, \
+{WINDOW_TEXT}). If it's OPEN, ask whether they'd like a code; don't issue it until they explicitly say yes.
+- If it's CLOSED: there's no code to give right now. If they ask for one, say the promotion runs {WINDOW_TEXT} and \
+invite them back. Never ask for an email while it's CLOSED.
+- If it's OPEN and the customer explicitly asks for the code (or says yes to your offer): they've already said \
+they want it, so don't ask again. If you have their email from this conversation, call issue_early_risers_code \
+with it right away; if not, ask for their email (only that), then call the tool.
+- needs_email: ask for their email (only that), then call the tool again with it.
 - On success: say it's {DISCOUNT_PERCENT}% off and put the code on its own line, exactly as returned. If \
 already_issued is true, say this is the same code they were given earlier today. Don't invent an expiry date, \
 minimum spend, exclusions, or redemption steps beyond "use it at checkout".
@@ -63,6 +68,10 @@ class EarlyRisers:
         self.now = now
         self.store = store
         self.new_code = new_code  # injectable so tests can force a collision
+
+    def status_line(self) -> str:
+        """The per-turn eligibility fact for the model (D-64). A fact, not the clock: the raw time stays out."""
+        return STATUS_OPEN if in_window(self.now()) else STATUS_CLOSED
 
     def issue_early_risers_code(self, email: str = "") -> dict:
         # Window first: outside it the answer is "no" for everyone, so never make the customer
@@ -133,4 +142,5 @@ def build(deps: Deps) -> Skill:
             ),
         ),
         guarded_values={"blocked_code": CODE_PATTERN},
+        turn_context=promo.status_line,
     )

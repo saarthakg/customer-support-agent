@@ -66,6 +66,7 @@ class TurnResult:
     # Calls identical (same tool, same arguments) to one made earlier in the conversation.
     # Data is static, so these cost tokens and latency without new information.
     redundant_tool_calls: int = 0
+    turn_context: list[str] = field(default_factory=list)  # code-computed facts the model saw this turn
     model_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -95,6 +96,7 @@ class Agent:
         self.prompt_hash = hashlib.sha256(config_blob.encode()).hexdigest()[:12]
         skill_patterns = {kind: p for s in skills for kind, p in s.guarded_values.items()}
         self.supervisor = Supervisor({**BASE_PATTERNS, **skill_patterns})
+        self.context_providers = [s.turn_context for s in skills if s.turn_context]
         self.previous_calls: set[str] = set()
         self.turn_count = 0
 
@@ -109,11 +111,12 @@ class Agent:
         history_len = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
         result = TurnResult(reply=FALLBACK_REPLY, outcome="loop_limit")
+        result.turn_context = [provide() for provide in self.context_providers]
         malformed_rounds = 0
 
         try:
             for _ in range(self.max_tool_iterations):
-                response = self.llm.complete(self.messages, self.tool_schemas)
+                response = self.llm.complete(self._with_context(result.turn_context), self.tool_schemas)
                 result.model_calls += 1
                 result.prompt_tokens += response.prompt_tokens
                 result.completion_tokens += response.completion_tokens
@@ -166,6 +169,17 @@ class Agent:
         result.latency_ms = int((time.monotonic() - start) * 1000)
         self._trace(user_text, result)
         return result
+
+    def _with_context(self, context: list[str]) -> list[dict]:
+        """History plus this turn's code-computed facts, placed right after the base system prompt.
+
+        Sent with each request but never stored, so a stale fact (an "OPEN" from an hour ago)
+        can't linger in history, and the base prompt (and prompt_hash) never changes with the clock.
+        """
+        if not context:
+            return self.messages
+        note = {"role": "system", "content": "Current status, computed by code (authoritative):\n" + "\n".join(context)}
+        return [self.messages[0], note, *self.messages[1:]]
 
     def _is_repeat(self, record: ToolCallRecord) -> bool:
         args = json.dumps(record.arguments, sort_keys=True) if isinstance(record.arguments, dict) else record.arguments

@@ -9,7 +9,7 @@ Tool calls are shown as the agent made them; the catalog result is abbreviated.
 
 **Customer:** Hi, where's my order?
 
-**Sierra:** I can help with that! Please provide both your email address and order number so I can look up your order status.
+**Sierra:** I can help with that! Please provide both your email and order number so I can look up your order status.
 
 **Customer:** john.doe@example.com
 
@@ -19,11 +19,9 @@ Tool calls are shown as the agent made them; the catalog result is abbreviated.
 
 > `lookup_order({"email": "john.doe@example.com", "order_number": "W001"})` → `{"ok": true, "order_number": "#W001", "customer_first_name": "John", "status": "delivered", "status_meaning": "The order has been delivered.", "items": [{"sku": "SOBP001", "name": "Bhavish's Backcountry Blaze Backpack"}, {"sku": "SOWB004", "name": "Beth's Caffeinated Energy Drink"}], "tracking_url": "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK123456789"}`
 
-**Sierra:** Your order #W001 has been delivered. It included Bhavish's Backcountry Blaze Backpack and Beth's Caffeinated Energy Drink. You can track it here for details:  
-  
+**Sierra:** John, your order #W001 has been delivered. It included Bhavish's Backcountry Blaze Backpack and Beth's Caffeinated Energy Drink. You can track it here if needed:   
 https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK123456789  
-  
-See you on the summit! 🏔️🥾 Is there anything else I can help with?
+See you on the summit! 🌲🥾 Is there anything else I can help with?
 
 ---
 
@@ -35,57 +33,51 @@ See you on the summit! 🏔️🥾 Is there anything else I can help with?
 
 > `lookup_order({"email": "alice.johnson@example.com", "order_number": "#W003"})` → `{"ok": true, "order_number": "#W003", "customer_first_name": "Alice", "status": "fulfilled", "status_meaning": "The order is packed and getting ready to ship. It hasn't been handed to the carrier yet, so there is no tracking number yet.", "items": [{"sku": "SOBT003", "name": "Nat's Infinity Pro Hairbrush"}], "tracking_url": null}`
 
-**Sierra:** Your order #W003 is packed and getting ready to ship, Alice. It includes Nat's Infinity Pro Hairbrush. There's no tracking number yet. Onward into the unknown! 🧭
+**Sierra:** Your order #W003 is packed and getting ready to ship, Alice. It includes Nat's Infinity Pro Hairbrush. There's no tracking number yet. Onward into the unknown! 🌲🥾 Is there anything else I can help with?
 
 ---
 
 ## order_error_escalates
 
-*orders journey spec: error status + missing SKU SOCH010 ends in handoff (D-15, D-16) · checks passed*
+*orders journey spec: error status + missing SKU SOCH010 ends in handoff (D-15, D-16) · checks FAILED: no reply in first 2 turn(s): offers handoff to support; no escalate_to_human call returned {'ok': True}*
 
 **Customer:** I need to check on my order
 
-**Sierra:** Please provide both your email address and order number so I can look up your order status.
+**Sierra:** Please provide both your email and order number so I can look up the status for you.
 
 **Customer:** W004, bob.brown@example.com
 
-> `lookup_order({"email": "bob.brown@example.com", "order_number": "W004"})` → `{"ok": true, "order_number": "#W004", "customer_first_name": "Bob", "status": "error", "status_meaning": "There is a problem with this order that our support team needs to resolve. The cause is not known here.", "items": [{"sku": "SOSV007", "name": "Nishita's Invisibility Cloak"}, {"sku": "SOCH010", "name": null}], "tracking_url": null}`
-
-**Sierra:** I'm sorry, Bob, there is a problem with your order #W004 that our support team needs to resolve. It includes Nishita's Invisibility Cloak and an item (item code SOCH010). Would you like me to pass this issue to our support team for you?
+**Sierra:** Thank you! Just to confirm, your email is bob.brown@example.com and your order number is W004, correct?
 
 **Customer:** yes please
 
-> `escalate_to_human({"email": "bob.brown@example.com", "order_number": "W004", "summary": "Customer has an order problem with order #W004 including Nishita's Invisibility Cloak and an item (item code SOCH010)."})` → `{"ok": true, "ticket_id": "HT-XFJ7NE"}`
+> `lookup_order({"email": "bob.brown@example.com", "order_number": "W004"})` → `{"ok": true, "order_number": "#W004", "customer_first_name": "Bob", "status": "error", "status_meaning": "There is a problem with this order that our support team needs to resolve. The cause is not known here.", "items": [{"sku": "SOSV007", "name": "Nishita's Invisibility Cloak"}, {"sku": "SOCH010", "name": null}], "tracking_url": null}`
 
-**Sierra:** I've passed your issue to our support team. Your ticket ID is HT-XFJ7NE. Is there anything else I can help with?
+**Sierra:** I'm sorry, Bob, there is a problem with your order that our support team needs to resolve. It includes Nishita's Invisibility Cloak and an item (item code SOCH010). Would you like me to pass this issue to our support team for you?
 
 ---
 
 ## order_only_item_missing_from_catalog
 
-*Phase 0 finding: #W005's only SKU (SOBN008) is not in the catalog · checks passed*
+*data audit: #W005's only SKU (SOBN008) is not in the catalog · checks passed*
 
 **Customer:** status of order W005 for charlie.davis@example.com
 
 > `lookup_order({"email": "charlie.davis@example.com", "order_number": "W005"})` → `{"ok": true, "order_number": "#W005", "customer_first_name": "Charlie", "status": "delivered", "status_meaning": "The order has been delivered.", "items": [{"sku": "SOBN008", "name": null}], "tracking_url": "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK112233445"}`
 
-**Sierra:** Your order #W005 has been delivered. It included an item (item code SOBN008). You can track it here for details:  
-  
+**Sierra:** Charlie, your order #W005 has been delivered. It included an item (item code SOBN008). You can track it here:  
 https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK112233445  
-  
 See you on the summit! 🌄🥾 Is there anything else I can help with?
 
 ---
 
 ## order_mismatch_lockout_escalates
 
-*Phase 2 transcript bug: model forgot the email after order_not_found and never reached lockout · checks passed*
+*live transcript bug: model forgot the email after order_not_found and never reached lockout (D-45) · checks FAILED: no lookup_order call returned {'error': 'too_many_attempts'}; no escalate_to_human call returned {'ok': True}*
 
 **Customer:** check order W002, my email is john.doe@example.com
 
-> `lookup_order({"email": "john.doe@example.com", "order_number": "W002"})` → `{"ok": false, "error": "order_not_found"}`
-
-**Sierra:** I couldn't find an order matching that email and order number together. Could you please double-check both?
+**Sierra:** I have your email but need the order number again to check your order. Could you please provide the order number?
 
 **Customer:** hmm, try W003
 
@@ -95,15 +87,13 @@ See you on the summit! 🌄🥾 Is there anything else I can help with?
 
 **Customer:** what about W004?
 
-> `lookup_order({"email": "john.doe@example.com", "order_number": "W004"})` → `{"ok": false, "error": "too_many_attempts"}`
+> `lookup_order({"email": "john.doe@example.com", "order_number": "W004"})` → `{"ok": false, "error": "order_not_found"}`
 
-**Sierra:** For security, I can't run more order lookups in this chat. If you'd like, I can pass your request to our support team for help. Would you like me to do that?
+**Sierra:** I couldn't find an order matching that email and order number together. Could you please double-check both?
 
 **Customer:** yes
 
-> `escalate_to_human({"email": "john.doe@example.com", "order_number": "W004", "summary": "Customer needs help with order W004; multiple lookup attempts resulted in security lockout."})` → `{"ok": true, "ticket_id": "HT-6XHS8D"}`
-
-**Sierra:** I've passed your request to our support team for order W004. Your ticket ID is HT-6XHS8D. Is there anything else I can help with?
+**Sierra:** I still need the order number to check your order status. Could you please provide it?
 
 ---
 
@@ -115,7 +105,7 @@ See you on the summit! 🌄🥾 Is there anything else I can help with?
 
 > `lookup_order({"email": "jane.smith@example.com", "order_number": "order 2"})` → `{"ok": true, "order_number": "#W002", "customer_first_name": "Jane", "status": "in-transit", "status_meaning": "The order has shipped and is on its way.", "items": [{"sku": "SOJT005", "name": "Pol's Peregrine Pathfinder Plane"}, {"sku": "SOSB006", "name": "Ishmeet's Jetpack"}], "tracking_url": "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK987654321"}`
 
-**Sierra:** Your order #W002 is in transit and on its way, Jane. It includes Pol's Peregrine Pathfinder Plane and Ishmeet's Jetpack.   
+**Sierra:** Your order #W002 is in transit, Jane. It includes Pol's Peregrine Pathfinder Plane and Ishmeet's Jetpack.   
   
 https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK987654321  
   
@@ -135,29 +125,29 @@ Onward into the unknown! 🧭🌄 Anything else I can assist you with?
 
 ## order_needs_both_identifiers
 
-*P6: never look up with one identifier · checks passed*
+*D-12: never look up an order with one identifier · checks passed*
 
 **Customer:** what's the status of order W001?
 
-**Sierra:** Could you please provide the email address used for order W001? I need both the email and order number to check the status.
+**Sierra:** Could you please provide the email address associated with order W001? I need both the email and order number to check the status.
 
 ---
 
 ## promo_explicit_request_in_window
 
-*Early Risers journey spec: explicit ask inside the window, email collected · clock frozen at 08:30 AM PT · checks FAILED: no issue_early_risers_code call returned {'error': 'needs_email'}*
+*Early Risers journey spec: explicit ask inside the window, email collected · clock frozen at 08:30 AM PT · checks passed*
 
 **Customer:** Hi! Can I get the Early Risers discount code?
 
-**Sierra:** The Early Risers promotion is a 10% discount available only from 8:00 to 10:00 AM Pacific Time. May I have your email to check if the code can be issued for you now?
+**Sierra:** May I have your email address to issue the Early Risers 10% discount code?
 
 **Customer:** jane.smith@example.com
 
-> `issue_early_risers_code({"email": "jane.smith@example.com"})` → `{"ok": true, "code": "EARLYRISER-FSYA6P", "discount_percent": 10, "email": "jane.smith@example.com", "already_issued": false}`
+> `issue_early_risers_code({"email": "jane.smith@example.com"})` → `{"ok": true, "code": "EARLYRISER-MTPWGB", "discount_percent": 10, "email": "jane.smith@example.com", "already_issued": false}`
 
-**Sierra:** Here's your 10% off Early Risers discount code to use at checkout:  
+**Sierra:** Here's your 10% Early Risers discount code to use at checkout:  
   
-EARLYRISER-FSYA6P  
+EARLYRISER-MTPWGB  
   
 Happy trails! 🌲🥾 Is there anything else I can help with?
 
@@ -169,21 +159,21 @@ Happy trails! 🌲🥾 Is there anything else I can help with?
 
 **Customer:** I'd like the Early Risers code please, my email is jane.smith@example.com
 
-> `issue_early_risers_code({"email": "jane.smith@example.com"})` → `{"ok": true, "code": "EARLYRISER-H7A7ZH", "discount_percent": 10, "email": "jane.smith@example.com", "already_issued": false}`
+> `issue_early_risers_code({"email": "jane.smith@example.com"})` → `{"ok": true, "code": "EARLYRISER-E3Z5AZ", "discount_percent": 10, "email": "jane.smith@example.com", "already_issued": false}`
 
-**Sierra:** Here's your 10% Early Risers discount code to use at checkout:  
+**Sierra:** Here's your 10% off Early Risers code to use at checkout:  
   
-EARLYRISER-H7A7ZH  
+EARLYRISER-E3Z5AZ  
   
-Happy trails with your savings! 🌲🥾 Is there anything else I can help with?
+Happy trails! 🌲🥾 Is there anything else I can help with?
 
 **Customer:** Sorry, can I get another Early Risers code? Same email.
 
 **Sierra:** This is the same Early Risers code you were given earlier today:  
   
-EARLYRISER-H7A7ZH  
+EARLYRISER-E3Z5AZ  
   
-Use it at checkout for 10% off. Let me know if you need anything else for your next adventure!
+Enjoy your adventure savings! 🧭⛺ Anything else I can assist with?
 
 ---
 
@@ -193,9 +183,7 @@ Use it at checkout for 10% off. Let me know if you need anything else for your n
 
 **Customer:** Can I have the Early Risers promo code? My email is john.doe@example.com
 
-> `issue_early_risers_code({"email": "john.doe@example.com"})` → `{"ok": false, "error": "outside_promo_window", "window": "8:00-10:00 AM Pacific Time", "current_time_pt": "10:00 AM PT"}`
-
-**Sierra:** The Early Risers promotion runs 8:00-10:00 AM Pacific Time, and it is now 10:00 AM PT. Please come back during the promotion hours for the 10% discount. Is there anything else I can help with?
+**Sierra:** The Early Risers promotion runs 8:00-10:00 AM Pacific Time and is currently closed. Please check back during those hours for the 10% discount code. Is there anything else I can help with?
 
 ---
 
@@ -205,17 +193,17 @@ Use it at checkout for 10% off. Let me know if you need anything else for your n
 
 **Customer:** Do you have any discounts right now?
 
-**Sierra:** We have the Early Risers promotion, which offers 10% off between 8:00 and 10:00 AM Pacific Time. Would you like me to check if you can get a code for that?
+**Sierra:** We have the Early Risers promotion running now, which gives you 10% off if you shop between 8:00-10:00 AM Pacific Time. Would you like me to get you a code for that?
 
 **Customer:** Yes please! It's alice.johnson@example.com
 
-> `issue_early_risers_code({"email": "alice.johnson@example.com"})` → `{"ok": true, "code": "EARLYRISER-H32GYB", "discount_percent": 10, "email": "alice.johnson@example.com", "already_issued": false}`
+> `issue_early_risers_code({"email": "alice.johnson@example.com"})` → `{"ok": true, "code": "EARLYRISER-NKJNB8", "discount_percent": 10, "email": "alice.johnson@example.com", "already_issued": false}`
 
-**Sierra:** Here's your 10% off Early Risers discount code to use at checkout:  
+**Sierra:** Here's your 10% off Early Risers discount code:  
   
-EARLYRISER-H32GYB  
+EARLYRISER-NKJNB8  
   
-Happy trails! 🌲🥾 Is there anything else I can help with?
+Use it at checkout. Happy trails! 🌲🥾 Is there anything else I can help with?
 
 ---
 
@@ -225,13 +213,11 @@ Happy trails! 🌲🥾 Is there anything else I can help with?
 
 **Customer:** Do you have any discounts right now?
 
-**Sierra:** We have the Early Risers promotion, which offers 10% off between 8:00-10:00 AM Pacific Time. Would you like me to check if you can get a code for it?
+**Sierra:** We have the Early Risers promotion, which offers 10% off between 8:00 and 10:00 AM Pacific Time. It is currently closed, but feel free to come back during those hours for the discount. Is there anything else you'd like to know?
 
 **Customer:** yes please
 
-> `issue_early_risers_code({})` → `{"ok": false, "error": "outside_promo_window", "window": "8:00-10:00 AM Pacific Time", "current_time_pt": "2:20 PM PT"}`
-
-**Sierra:** The Early Risers promotion runs 8:00-10:00 AM Pacific Time, and it's currently 2:20 PM PT. Please come back during that time if you'd like to use the discount. Is there anything else I can help with?
+**Sierra:** The Early Risers promotion runs only from 8:00 to 10:00 AM Pacific Time and is currently closed. Please check back during those hours to get the 10% discount code. Can I help you with anything else for your outdoor plans?
 
 ---
 
@@ -243,15 +229,13 @@ Happy trails! 🌲🥾 Is there anything else I can help with?
 
 > `lookup_order({"email": "john.doe@example.com", "order_number": "W001"})` → `{"ok": true, "order_number": "#W001", "customer_first_name": "John", "status": "delivered", "status_meaning": "The order has been delivered.", "items": [{"sku": "SOBP001", "name": "Bhavish's Backcountry Blaze Backpack"}, {"sku": "SOWB004", "name": "Beth's Caffeinated Energy Drink"}], "tracking_url": "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK123456789"}`
 
-**Sierra:** Your order #W001 has been delivered, John. It included Bhavish's Backcountry Blaze Backpack and Beth's Caffeinated Energy Drink.   
-  
+**Sierra:** Your order #W001 has been delivered. It included Bhavish's Backcountry Blaze Backpack and Beth's Caffeinated Energy Drink. You can see the delivery details here:  
 https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK123456789  
-  
 Happy trails! 🌲🥾 Is there anything else I can help with?
 
 **Customer:** Great, thanks!
 
-**Sierra:** You're welcome! If you need anything else for your next adventure, just let me know. See you on the summit! 🏔️🌄
+**Sierra:** You're welcome! See you on the summit! 🏔️🌄 If you need anything else, just let me know.
 
 ---
 
@@ -263,47 +247,47 @@ Happy trails! 🌲🥾 Is there anything else I can help with?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** For your ski trip, I recommend Crain's Summit Pro X Skis. They offer ultimate precision and performance with an advanced vibration-dampening system for a smooth ride on every descent. See you on the summit! ⛷️🏔️  
+**Sierra:** For your ski trip, I recommend Crain's Summit Pro X Skis. They offer ultimate precision and performance with an advanced vibration-dampening system for a smooth ride on every descent.   
   
-Is there anything else you need for your adventure?
+Is there any other gear you'd like to consider for your adventure? 🏔️🥾
 
 ---
 
 ## product_vague_looks_before_asking
 
-*review note: call list_products before any clarifying question; at most one question · checks passed*
+*D-51: call list_products before any clarifying question; at most one question · checks passed*
 
 **Customer:** I need some gear for a weekend outdoors
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** For a weekend outdoors, I recommend Bhavish's Backcountry Blaze Backpack. It's designed for rugged adventures with ample storage and weatherproof materials, perfect for carrying your gear. Would you like to see other gear options for your trip?
+**Sierra:** For a weekend outdoors, I recommend Bhavish's Backcountry Blaze Backpack. It's designed for rugged adventures with ample storage and weatherproof materials, perfect for your expedition. Would you like to see other gear for your trip?
 
 ---
 
 ## product_no_repeated_clarifying_question
 
-*Phase 2 transcript P2: asked 'what activity are you planning?' on three consecutive turns · checks passed*
+*live transcript bug: asked 'what activity are you planning?' on three consecutive turns (D-54) · checks passed*
 
 **Customer:** interested in hiking boots
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** We don't carry hiking boots in our catalog. Is there any other gear or outdoor equipment you need for your hiking adventure?
+**Sierra:** We don't carry hiking boots in our catalog. Is there any other gear or outdoor essentials you need for your hiking adventure?
 
 **Customer:** men's waterproof ones
 
-**Sierra:** We don't carry men's waterproof hiking boots or any hiking boots at all. Is there another type of gear or equipment for your outdoor plans that I can help you find?
+**Sierra:** We don't carry men's waterproof hiking boots. Is there another type of gear or equipment for your hiking trip that I can help you find?
 
 **Customer:** yes please
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** For your hiking adventure, I recommend Bhavish's Backcountry Blaze Backpack. It's designed for rugged adventures with ultimate durability and weatherproof materials, perfect for carrying your gear on the trail. Would you like to see other gear options?
+**Sierra:** For your hiking adventure, I recommend Bhavish's Backcountry Blaze Backpack. It's designed for rugged adventures with weatherproof materials and ample storage to carry your essentials. Would you like to hear about other gear as well?
 
 **Customer:** 10.5 US
 
-**Sierra:** I don't have size information for the products in our catalog, so I can't filter by shoe size. Let me know if you'd like recommendations for other hiking or outdoor gear instead!
+**Sierra:** I don't have size information for the products in our catalog, so I can't filter by shoe size. Would you like recommendations for other hiking gear or essentials instead?
 
 ---
 
@@ -315,7 +299,7 @@ Is there anything else you need for your adventure?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** We don't have pricing information to filter by budget, so I can't confirm which backpack is cheapest. However, for rugged outdoor adventures, I recommend Bhavish's Backcountry Blaze Backpack. It offers ample storage and weatherproof materials, perfect for any expedition. Would you like recommendations for other gear?
+**Sierra:** We don't have pricing information in the catalog, so I can't confirm which backpack fits your $50 budget. However, I can recommend Bhavish's Backcountry Blaze Backpack, designed for rugged adventures with ample storage and weatherproof materials. Would you like to see other gear for your outdoor plans?
 
 ---
 
@@ -327,7 +311,7 @@ Is there anything else you need for your adventure?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** Ishmeet's Jetpack is described as lightweight and durable, perfect for both short bursts of speed and longer, scenic flights. The description does not specify safety for kids. Would you like recommendations for gear that is specifically kid-friendly?
+**Sierra:** We don't have specific safety information about Ishmeet's Jetpack for kids in the product description. It is described as lightweight and durable, suitable for short bursts of speed and longer scenic flights. Is there another type of gear or activity you need help with?
 
 ---
 
@@ -339,7 +323,7 @@ Is there anything else you need for your adventure?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** Yes, we have Zack's Bulk Up Protein Bars in stock, but only a few are left. They are great for fueling your gains during intense workouts or as a quick snack. Would you like recommendations for any other gear?
+**Sierra:** We have Zack's Bulk Up Protein Bars in stock, but only a few are left. They are great for fueling your gains during intense workouts or as a quick snack. Would you like recommendations for other hiking or outdoor snacks?
 
 ---
 
@@ -351,7 +335,9 @@ Is there anything else you need for your adventure?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** For exploring the wild without scaring off animals, Nishita's Invisibility Cloak is a great choice. It uses state-of-the-art cloaking technology to render you completely invisible, allowing for unmatched stealth and discretion in nature. Would you like to see other gear for your adventure? 🌲🥾
+**Sierra:** For exploring the wild without scaring off animals, Nishita's Invisibility Cloak would be an excellent choice. It uses state-of-the-art cloaking technology to render you completely invisible, allowing for unmatched stealth and discretion in nature.   
+  
+Is there anything else you need for your adventure? 🌲🧭
 
 ---
 
@@ -363,23 +349,23 @@ Is there anything else you need for your adventure?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** What kind of outdoor activity or gear are you planning for? That way I can recommend the best options from our catalog.
+**Sierra:** What kind of outdoor activity or adventure are you planning? That will help me recommend the best gear for you.
 
 **Customer:** boots
 
-**Sierra:** We don't carry hiking boots. If you're looking for gear to support your outdoor adventures, I recommend Bhavish's Backcountry Blaze Backpack for rugged expeditions or Zack's Bulk Up Protein Bars for energy on the trail (only a few left). Would you like to see either of these?
+**Sierra:** We don't carry hiking boots. If you're looking for gear to support hiking, I recommend Bhavish's Backcountry Blaze Backpack for rugged adventures and ample storage. Would you like to see other hiking-related gear?
 
 **Customer:** hiking boots
 
-**Sierra:** We don't carry hiking boots. Is there another type of gear or outdoor activity you want to prepare for? I can help find suitable equipment from our catalog.
+**Sierra:** We don't carry hiking boots. If you want, I can help you find other gear for hiking or outdoor adventures. What else do you need?
 
 **Customer:** no
 
-**Sierra:** Alright, if you need any gear or order help in the future, just let me know. Is there anything else I can help with?
+**Sierra:** Alright, if you need anything else for your next adventure, just let me know. Is there anything else I can help with?
 
 **Customer:** yes
 
-**Sierra:** What else can I help you with on your outdoor adventure?
+**Sierra:** What else can I help you with today?
 
 ---
 
@@ -391,18 +377,18 @@ Is there anything else you need for your adventure?
 
 > `list_products({})` → `{catalog: 10 products}`
 
-**Sierra:** We don't carry hiking boots in our catalog. Is there any other gear or outdoor essentials you need for your hike?
+**Sierra:** We don't carry hiking boots. Is there any other gear or outdoor equipment you need for your adventure?
 
 **Customer:** men's waterproof ones
 
-**Sierra:** We don't carry men's waterproof hiking boots or any hiking boots at all. Is there another type of gear or equipment you would like help finding for your outdoor adventure?
+**Sierra:** We don't carry men's waterproof hiking boots or any hiking boots. Is there another type of gear or equipment I can help you find for your outdoor plans?
 
 **Customer:** yes please
 
-**Sierra:** For hiking, I recommend Bhavish's Backcountry Blaze Backpack for rugged adventures and ample storage, and Zack's Bulk Up Protein Bars for energy on the trail—only a few left. Would you like to hear about more gear?
+**Sierra:** For hiking, I recommend Bhavish's Backcountry Blaze Backpack for rugged adventures with ample storage and weatherproof materials. Also, Zack's Bulk Up Protein Bars are great for energy on the trail, though only a few are left. Would you like to hear about any other hiking gear?
 
 **Customer:** 10.5 US
 
-**Sierra:** I don't have size details for the products in our catalog, so I can't filter by shoe size. Would you like me to recommend other hiking gear or essentials instead?
+**Sierra:** I don't have size details for the products in our catalog, so I can't filter by shoe size. If you want, I can help you find other hiking gear or essentials for your trip. What else do you need?
 
 ---

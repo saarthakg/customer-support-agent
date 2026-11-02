@@ -38,6 +38,9 @@ class Skill:
     # Values this skill mints that must never be invented, e.g. {"blocked_ticket": <HT-XXXXXX regex>}.
     # The supervisor blocks any match in a reply unless one of this conversation's tool results returned it.
     guarded_values: dict[str, re.Pattern[str]] = field(default_factory=dict)
+    # A fact computed by code on every model call (e.g. "Early Risers status: OPEN until 10:00 AM PT"),
+    # sent as a separate system message: never stored in history, never part of the base prompt (D-64).
+    turn_context: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)
