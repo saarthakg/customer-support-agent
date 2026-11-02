@@ -1,9 +1,9 @@
 # Decisions log
 
 Each entry records the choice, the alternative considered, and the reason. Entries are added when a decision is made, not reconstructed at the end.
-Status: **Accepted** = settled; **Proposed** = recommendation awaiting review.
-**★ Headline** marks the decisions the README's design section leads with.
-Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly discussed were accepted when Phase 1 was approved.
+Every entry is **Accepted** (final). **★ Headline** marks the decisions the README's design section leads with.
+
+How to read this log: it was written as the work happened, in the order of the build (planning, core loop, then one skill at a time), and each section heading names that stage. References such as `P1`–`P13` and `§3` point to the author's private engineering-principles document, which isn't included. Each entry states its own reasoning, so it can be read without that document. Entries D-01–D-25 were made during planning and reviewed before any code was written.
 
 ---
 
@@ -110,7 +110,7 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Choice:** the agent says plainly that it doesn't have pricing information, so it can't filter by budget. It offers to recommend by activity or need instead. It never estimates prices or calls something "affordable" or "premium-priced".
 - **Why:** P7. The catalog has no price field.
 
-### D-19 Present whimsical products earnestly · Accepted (from §0.1)
+### D-19 Present whimsical products earnestly · Accepted
 - **Choice:** describe items only through their descriptions, without mocking them and without adding capability or safety claims. When nothing fits, say so and suggest the closest real options.
 
 ---
@@ -250,7 +250,7 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - The ticket ID is `HT-` plus 6 characters from an alphabet without 0/O/1/I/L, because it gets read aloud.
 - The escalation journey uses a plain tone: no emojis, no exclamation marks.
 
-### D-44 "Ask for what's missing" wording (deviates from §3's literal "one thing at a time") · Accepted · flag for review
+### D-44 "Ask for what's missing" wording (deviates from §3's literal "one thing at a time") · Accepted
 - **Found:** the prompt rule "Ask for exactly what is missing, one thing at a time" made the model say "Just one at a time, please" to customers.
 - **Choice:** "Ask only for what you're missing, in one short question (e.g. if you have the order number, ask only for the email). Never ask again for something the customer already gave you, and never tell them how to pace or format their answers."
 - **Why:** §3's intent, shown by its own example, is "don't re-ask for what you have". The literal "one at a time" got echoed to customers as an instruction. With both identifiers missing, the model still tends to ask for one and then the other. That's acceptable, and it's a Phase 4 voice-tuning candidate.

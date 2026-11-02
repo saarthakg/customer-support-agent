@@ -21,7 +21,7 @@ class FakeLLM:
         self.responses = list(responses)
         self.seen_messages: list[list[dict]] = []
 
-    def complete(self, messages, tools):
+    def complete(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
         self.seen_messages.append([dict(m) for m in messages])
         item = self.responses.pop(0)
         if isinstance(item, Exception):
@@ -37,7 +37,7 @@ def calls(*tool_calls: tuple[str, str]) -> LLMResponse:
     return LLMResponse(None, [ToolCall(f"call_{i}", n, a) for i, (n, a) in enumerate(tool_calls)], 10, 5, 1)
 
 
-def echo_skill(handler=None) -> Skill:
+def echo_skill(handler: Callable[..., dict] | None = None) -> Skill:
     tool = Tool(
         name="echo",
         description="Echo a word.",

@@ -1,10 +1,10 @@
-"""Scripted multi-turn conversations, run against the real model (P12).
+"""Scripted multi-turn conversations, run against the real model.
 
 Each scenario is a list of customer messages plus checks. A check looks at the
 TurnResults and returns a failure message, or None if it passed. Every bug found
 by hand becomes a scenario here, so it can't silently come back.
 
-The pass^k runner lives in run_scenarios.py (Phase 3).
+Run them with: python -m tests.scenarios.run_scenarios -k 3
 """
 
 import re
@@ -141,7 +141,10 @@ _OUTDOORS = re.compile(
 
 
 def voiced(turn: int) -> Check:
-    """Brand voice on a happy path: 1-2 emojis and an outdoors reference (brief: 'frequent references to the outdoors')."""
+    """Brand voice on a happy path: 1-2 emojis and an outdoors reference.
+
+    The brief asks for 'frequent references to the outdoors'; D-63 calibrates that to one per happy reply.
+    """
     def check(results: list[TurnResult]) -> str | None:
         reply = results[turn].reply
         emojis = len(_EMOJI.findall(reply))
@@ -208,7 +211,10 @@ def never_presented_as_substitute(results: list[TurnResult]) -> str | None:
 # The only catalog item that could pass for footwear; offering it in a boots conversation is a substitution.
 NO_SHOES_FOR_BOOTS = no_reply_matches(r"Wizarding Red Shoes|red shoes", "offered the teleporting shoes as footwear")
 NO_WEBSITE_REFERRAL = no_reply_matches(r"\bour (web)?site\b|\bonline store\b", "referred customer to a website")
-SAYS_NO_BOOTS = r"(don'?t|do not|doesn'?t|does not)\s+(currently\s+)?(carry|have|sell|stock|offer)|no\s+(hiking\s+)?boots|not\s+in\s+our\s+catalog"
+SAYS_NO_BOOTS = (
+    r"(don'?t|do not|doesn'?t|does not)\s+(currently\s+)?(carry|have|sell|stock|offer)"
+    r"|no\s+(hiking\s+)?boots|not\s+in\s+our\s+catalog"
+)
 
 
 SCENARIOS: list[Scenario] = [
@@ -254,7 +260,7 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario(
         name="order_only_item_missing_from_catalog",
-        origin="Phase 0 finding: #W005's only SKU (SOBN008) is not in the catalog",
+        origin="data audit: #W005's only SKU (SOBN008) is not in the catalog",
         turns=["status of order W005 for charlie.davis@example.com"],
         checks=[
             voiced(turn=0),
@@ -267,7 +273,7 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario(
         name="order_mismatch_lockout_escalates",
-        origin="Phase 2 transcript bug: model forgot the email after order_not_found and never reached lockout",
+        origin="live transcript bug: model forgot the email after order_not_found and never reached lockout (D-45)",
         turns=["check order W002, my email is john.doe@example.com", "hmm, try W003", "what about W004?", "yes"],
         checks=[
             NO_EMOJI,
@@ -296,7 +302,7 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario(
         name="order_needs_both_identifiers",
-        origin="P6: never look up with one identifier",
+        origin="D-12: never look up an order with one identifier",
         turns=["what's the status of order W001?"],
         checks=[
             tool_not_called("lookup_order"),
@@ -349,7 +355,9 @@ SCENARIOS: list[Scenario] = [
         checks=[
             tool_returned("issue_early_risers_code", error="outside_promo_window"),
             no_reply_matches(PROMO_CODE, "showed a code outside the window"),
-            some_reply_matches(r"8(:00)?\s*(AM|a\.m\.)?\s*(-|–|to|and)\s*10(:00)?", "states the 8-10 window", within_turns=1),
+            some_reply_matches(
+                r"8(:00)?\s*(AM|a\.m\.)?\s*(-|–|to|and)\s*10(:00)?", "states the 8-10 window", within_turns=1
+            ),
             some_reply_matches(r"Pacific|\bPT\b", "says the hours are Pacific", within_turns=1),
             supervisor_never_blocked,
         ],
@@ -408,13 +416,13 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario(
         name="product_vague_looks_before_asking",
-        origin="review note: call list_products before any clarifying question; at most one question",
+        origin="D-51: call list_products before any clarifying question; at most one question",
         turns=["I need some gear for a weekend outdoors"],
         checks=[tool_called("list_products", by_turn=0), max_questions(turn=0, n=1), supervisor_never_blocked],
     ),
     Scenario(
         name="product_no_repeated_clarifying_question",
-        origin="Phase 2 transcript P2: asked 'what activity are you planning?' on three consecutive turns",
+        origin="live transcript bug: asked 'what activity are you planning?' on three consecutive turns (D-54)",
         turns=["interested in hiking boots", "men's waterproof ones", "yes please", "10.5 US"],
         checks=[
             tool_called("list_products", by_turn=0),
@@ -497,7 +505,8 @@ SCENARIOS: list[Scenario] = [
             no_reply_matches(r"Sierra Trail|Mountain Ridge|Cascade Peak", "repeated a previously invented product"),
             # Positive claims only: "I can't confirm size 10.5" is the correct answer and must not trip this.
             no_reply_matches(
-                r"(?<!not )(?<!n't )\b(available|in stock|we have (them|it|some)) in (a )?size|size [\d.]+ (is|are) (available|in stock)",
+                r"(?<!not )(?<!n't )\b(available|in stock|we have (them|it|some)) in (a )?size"
+                r"|size [\d.]+ (is|are) (available|in stock)",
                 "claimed size availability",
             ),
             supervisor_never_blocked,

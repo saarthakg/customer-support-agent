@@ -9,7 +9,7 @@ A terminal customer-support agent for **Sierra Outfitters**, built on `gpt-4.1-m
 | Early Risers promotion | `issue_early_risers_code(email?)` | 8:00–10:00 AM Pacific (zoneinfo, DST-safe), window checked first, unique `secrets` codes, same code per customer per day, survives restarts |
 | Human handoff | `escalate_to_human(email, summary, order_number?)` | a real ticket in `logs/handoffs.jsonl` with a code-computed `verified` flag, so "I've passed this on" is true |
 
-Every non-obvious decision is in **[DECISIONS.md](DECISIONS.md)** with the alternative and the reason, logged as it was made. **[DEMO.md](DEMO.md)** is the live-demo runbook.
+Built with Claude Code against a written engineering-principles doc and a phase-by-phase review process (the brief encouraged AI tooling). Every non-obvious decision is in **[DECISIONS.md](DECISIONS.md)** with the alternative and the reason, logged as it was made. **[DEMO.md](DEMO.md)** is the live-demo runbook.
 
 ## Quickstart
 
@@ -71,7 +71,7 @@ The headline decisions are below. All 60+ entries, each with the alternative con
 | Decision | Alternative considered | Why |
 |---|---|---|
 | **Hand-rolled loop over Chat Completions** (D-04) | an agent SDK (banned), or the Responses API with server-held state | The whole conversation is a Python list we can print, trace and explain line by line. `llm.py` is the only file that knows the wire format (D-30), so swapping providers is a one-file change. |
-| **Single agent, workflow-shaped** (P2) | multi-agent / planner–executor | Three known journeys. The model's autonomy is limited to choosing tools and phrasing. More agents would add failure modes without adding capability. |
+| **Single agent, workflow-shaped** | multi-agent / planner–executor | Three known journeys. The model's autonomy is limited to choosing tools and phrasing. More agents would add failure modes without adding capability. |
 | **Skills as the unit of extension** (D-05, D-40) | decorators / plugin discovery | Explicit dependencies (`Deps`: data, clock, code store, handoff log) that tests can replace; one visible list of what's enabled. |
 | **Grounding is enforced, not requested: the before/after exhibit** (D-36, [docs/before_grounding.md](docs/before_grounding.md)) | trust the prompt | With no tools, the model invented three boot products, size availability, prices and a `sierraoutfitters.com` link, and every turn was traced as `"ok"`. That exhibit drove the explicit never-invent rule, the supervisor, the `supervisor` trace field, and two regression scenarios. |
 | **Deterministic supervisor** (D-09, D-36, D-47) | an LLM supervisor | Every URL, ticket ID and promo code in a reply must exactly match one a tool returned *in this conversation* (not just this turn, so "resend that link?" works; not the global store, so another customer's code can't pass). One corrective retry, then a fixed fallback. Free, instant, unit-tested. |
@@ -81,7 +81,7 @@ The headline decisions are below. All 60+ entries, each with the alternative con
 | **"Explicitly requests"** (D-21) | never mention it / issue on any discount question | Never advertised unprompted (not even in the greeting, D-35). A general "any discounts?" gets a mention with the hours, and a code only after an explicit yes. The model judges explicitness; code enforces time. |
 | **Promo identity = normalized email; one code per customer per Pacific day** (D-22, D-23, D-61) | per-session codes; one code forever | Email is the only stable identity here. Asking again the same day, even after a restart, returns the same code (`already_issued: true`). Codes come from `secrets` with an alphabet without ambiguous characters. |
 | **Identity check on orders: one generic error** (D-12, D-46) | "that email doesn't match this order" | A distinct message would let someone discover emails and order numbers. Both email and order number must match one record. After 3 *failures* (not attempts) the agent says "For security, I can't run more order lookups in this chat" and offers a handoff. |
-| **Human handoff built, not faked** (D-16) | "please contact support" | P9 requires a handoff offer on error orders, and the rules forbid claiming actions that didn't happen. A real ticket ID makes "I've passed this to our support team" true. `verified` is computed in code and never shown to the model. |
+| **Human handoff built, not faked** (D-16) | "please contact support" | Error-status orders need a handoff offer, and the agent must never claim an action that didn't happen. A real ticket ID makes "I've passed this to our support team" true. `verified` is computed in code and never shown to the model. |
 | **Brand voice in two tiers** (D-63) | one tone everywhere | Happy paths always carry one outdoors phrase plus 1–2 emojis, *after* the link or code, which sits on its own line. Error, lockout and handoff paths are plain: empathy first, no emojis. Checked deterministically in scenarios. |
 | **No RAG; tags withheld** (D-02, D-06) | embeddings, tag filtering | 10 products fit in one tool result. Tags are actively wrong (the energy drink is tagged `Weatherproof`, the jetpack `Safety-Enhanced`), so the model judges fit from descriptions only. At catalog scale, `list_products` becomes retrieval behind the same contract. |
 
@@ -99,10 +99,12 @@ Live runs against `gpt-4.1-mini`, with no tuning after the final run:
 | Full suite, k=2 (final prompt) | **21/22 scenarios pass^2; 43/44 runs (98%)** |
 | Full suite, k=1 (the run that produced [docs/transcripts.md](docs/transcripts.md)) | 21/22 |
 | Boots, repeated-question and vague-gear scenarios, k=5 | 5/5 each |
+| Final regression check after code cleanup, k=1 (prompt unchanged: same `prompt_hash`) | 20/22 (the in-window promo flake below, and one happy-path reply without an emoji) |
 
 **Known flakes, observed and not chased:**
 - `order_error_escalates`: once the model added an unprompted "Just to confirm, your email is … and order W004?" before looking up, so the 3-turn script ended before the escalation. Tone and content were correct.
-- `promo_explicit_request_in_window`: once the model asked for the email *before* calling the tool instead of after `needs_email`. Harmless inside the window. The case that matters, never asking for an email outside the window, has its own scenario and passed.
+- `promo_explicit_request_in_window`: the model sometimes asks for the email *before* calling the tool instead of after `needs_email`. Harmless inside the window. The case that matters, never asking for an email outside the window, has its own scenario and passed.
+- `product_playful_presented_earnestly`: once the reply had no emoji, so only the voice check failed. Content was correct.
 
 The boots assertion is "never presents a catalog item as a *replacement* for the requested product type". Mentioning what we do carry is allowed. An earlier, stricter version that failed on any mention of a poorly fitting product measured about 2/5. Those failures were category mentions, not substitutions, so the check was redefined to match the principle rather than tuning the prompt further (D-54). Two other checks were also corrected because they flagged correct behavior: the agent echoing a customer's "$50 budget", and its correct "can't confirm size 10.5" (D-52). Scenario checks are code too.
 
@@ -120,7 +122,7 @@ Model retries and timeouts use the openai client's built-in exponential backoff.
 - **Scenario pass rates are small samples** (k=2–5). They show the shape of reliability, not a confident estimate.
 - **Within one chat, a repeated promo request is answered from history**, not by calling the tool again. The supervisor verifies the code is exact. Cross-chat idempotency is code's job (D-58).
 - **The tracking numbers in the data (`TRK…`) aren't real USPS numbers**, so the links don't resolve. The URL is built from the brief's template exactly.
-- English only; no streaming; one conversation per process; the system prompt is ~5k tokens per call (the catalog is fetched by tool, not embedded).
+- English only; no streaming; one conversation per process; each model call sends about 5k prompt tokens (system prompt plus tool schemas; the catalog is fetched by tool, not embedded).
 
 ## Taking this to production
 

@@ -12,7 +12,11 @@ def lookup(datasets):
 # --- normalization ---
 
 @pytest.mark.parametrize(
-    "raw", ["W001", "#W001", "w001", " #W001 ", "#w001", "w1", "1", "001", "order 1", "Order #W001", "order number 1", "no. 1", "#W 001"]
+    "raw",
+    [
+        "W001", "#W001", "w001", " #W001 ", "#w001", "w1", "1", "001",
+        "order 1", "Order #W001", "order number 1", "no. 1", "#W 001",
+    ],
 )
 def test_order_number_variants_normalize(raw):
     assert normalize_order_number(raw) == "#W001"

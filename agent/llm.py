@@ -53,7 +53,9 @@ class LLM:
     def complete(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
         start = time.monotonic()
         try:
-            resp = self._client.chat.completions.create(
+            # The SDK types messages as its own TypedDicts; we pass plain dicts on purpose so
+            # nothing outside this file depends on openai types (D-30).
+            resp = self._client.chat.completions.create(  # type: ignore[call-overload]
                 model=self.model,
                 temperature=self.temperature,
                 messages=messages,

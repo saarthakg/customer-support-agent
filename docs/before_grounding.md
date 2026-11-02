@@ -1,6 +1,6 @@
 # Exhibit: before grounding
 
-Two live sessions from Phase 1 (`logs/trace.jsonl`, 2026-11-02), exported verbatim. The agent had **no tools enabled**, so it had no catalog at all, only the voice and rules prompt. The catalog has no boots.
+Two live sessions from early development (`logs/trace.jsonl`, 2026-11-02), exported verbatim. The agent had **no tools enabled**, so it had no catalog at all, only the voice and rules prompt. The catalog has no boots.
 
 They're kept as a walkthrough exhibit because they show why grounding and supervision live in code: a fluent model with nothing to ground on confidently makes things up, and the trace marked every one of these turns `outcome: "ok"`.
 

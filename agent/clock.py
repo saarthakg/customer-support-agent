@@ -1,4 +1,4 @@
-"""Time is a dependency: injected so tests, scenarios and `--now` can control it (P8).
+"""Time is a dependency: injected so tests, scenarios and `--now` can control it (D-55).
 
 Clocks are timezone-aware. Business rules convert to Pacific with zoneinfo, which
 handles DST, rather than assuming a fixed UTC offset.

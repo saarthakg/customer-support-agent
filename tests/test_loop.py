@@ -104,7 +104,7 @@ def test_greeting_does_not_advertise_promotions():
     assert not any(word in GREETING.lower() for word in ("promo", "discount", "early riser", "deal"))
 
 
-# --- supervisor integration (P11) ---
+# --- supervisor integration (D-09, D-36) ---
 
 BAD_LINK = "Browse here: https://www.sierraoutfitters.com/hiking-boots"
 

@@ -28,7 +28,6 @@ def test_blocks_url_no_tool_returned():
     verdict = Supervisor().check("Explore here:\n\nhttps://www.sierraoutfitters.com/hiking-boots\n\nOnward!")
     assert not verdict.ok
     assert verdict.violations == ["blocked_url: https://www.sierraoutfitters.com/hiking-boots"]
-    assert verdict.kinds == ["blocked_url"]
 
 
 def test_allows_url_a_tool_returned_even_in_a_later_turn():

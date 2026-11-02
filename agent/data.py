@@ -51,7 +51,7 @@ class Datasets:
 
 
 # Normalization lives in code, not the prompt: customers type "w1", "#W001" or
-# "order 2", and the model should pass that through untouched (P3).
+# "order 2", and the model should pass that through untouched (D-11).
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Optional "order" / "number" / "no." words, optional "#", optional "W", then digits.
 # Bare digits are accepted because every order in the data uses the W prefix (D-11).

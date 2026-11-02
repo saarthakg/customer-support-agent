@@ -1,4 +1,4 @@
-"""Run the conversation scenarios against the real model and report pass^k (P12).
+"""Run the conversation scenarios against the real model and report pass^k.
 
     python -m tests.scenarios.run_scenarios                    # every scenario, k=3
     python -m tests.scenarios.run_scenarios -k 5 --only promo  # scenarios whose name contains "promo"

@@ -1,4 +1,4 @@
-"""Deterministic check on every outgoing reply, before the customer sees it (P11).
+"""Deterministic check on every outgoing reply, before the customer sees it (D-09, D-36).
 
 Rule: any link, ticket ID or discount code in a reply must exactly match one that
 a tool returned earlier in this conversation. Invented links and codes are the
@@ -41,10 +41,6 @@ class Verdict:
     @property
     def ok(self) -> bool:
         return not self.violations
-
-    @property
-    def kinds(self) -> list[str]:
-        return sorted({v.split(":", 1)[0] for v in self.violations})
 
 
 class Supervisor:

@@ -48,6 +48,7 @@ def test_turn_record_ties_reply_to_config_and_masks_email(tmp_path):
 def test_prompt_hash_changes_when_tool_contract_changes():
     base = Agent(FakeLLM(), skills=[echo_skill()]).prompt_hash
     tool = echo_skill().tools[0]
-    reworded = Skill("Echo", "Use echo when asked.", (Tool(tool.name, "Repeat a word.", tool.parameters, tool.handler),))
+    reworded_tool = Tool(tool.name, "Repeat a word.", tool.parameters, tool.handler)
+    reworded = Skill("Echo", "Use echo when asked.", (reworded_tool,))
     assert Agent(FakeLLM(), skills=[reworded]).prompt_hash != base
     assert Agent(FakeLLM(), skills=[echo_skill()]).prompt_hash == base
