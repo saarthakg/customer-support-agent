@@ -28,3 +28,11 @@ python3 scripts/extract_data.py appendices.txt data
 ```
 
 The script fixes only PDF artifacts (a stray `None` line under each heading, and description strings wrapped across lines). Every value, typos included, is preserved exactly (DECISIONS D-01).
+
+## Observability
+
+Every turn appends one record to `logs/trace.jsonl`. It holds the user message, reply, outcome, supervisor result, tool calls (args, results, latency), token counts, `model`, `temperature`, and a `prompt_hash` that fingerprints the system prompt plus tool schemas. Emails are masked (`j***@example.com`) before anything is written (DECISIONS D-38).
+
+`--debug` prints the same tool calls and per-turn stats inline.
+
+Model retries and timeouts use the openai client's built-in exponential backoff. The values (`MAX_RETRIES`, `REQUEST_TIMEOUT_S`, `MAX_TOOL_ITERATIONS`) live in `agent/config.py` (D-26).

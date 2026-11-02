@@ -208,3 +208,15 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Why:** the rule cuts the rate, and the regex guarantees the damage never reaches the customer. It costs nothing at runtime and is fully unit-testable. After the change, replaying both sessions produced no invented products or links.
 - **Known gap:** prose referrals like "check our website" contain no URL, so the regex can't see them. They're tracked as a scenario check (`NO_WEBSITE_REFERRAL`) rather than blocked. An LLM supervisor would be the next layer.
 - **Detail:** the supervisor is skill-agnostic. It learns allowed values by observing tool results, and Early Risers will register a code pattern alongside the URL pattern.
+
+### D-37 Trace records carry supervisor outcome and an agent-config fingerprint · Accepted
+- **Found:** `outcome` alone marked the invented-URL turns as `"ok"`.
+- **Choice:** each record adds `supervisor` (`pass` / `retried` / `fallback` / `not_run`) plus `supervisor_blocked`, a list of `"<kind>: <value>"` such as `"blocked_url: https://…"` (and `blocked_code` once Early Risers exists). It also adds `model`, `temperature`, and `prompt_hash`: the first 12 hex characters of the SHA-256 of the system prompt plus tool schemas.
+- **Alternative:** a single `supervisor` field with five values (pass / blocked_url / blocked_code / retried / fallback), as in the review note.
+- **Why split:** "what happened" (pass, retried, fallback) and "what was blocked" (url, code) vary independently. A retry can follow a blocked URL *or* code, and one draft can contain both. A status plus a list records that without combinatorial values. `not_run` covers turns that failed before a final reply (API error, iteration cap).
+- **Why the hash:** a prompt or tool-description edit changes behavior as much as a model change. With the hash, any traced reply can be tied to the exact agent configuration. That's the cheap version of immutable versioned releases.
+
+### D-38 Emails redacted in traces · Accepted
+- **Choice:** `trace.redact()` masks every email anywhere in a record (user text, tool args, tool results, replies) as `j***@example.com` before writing. Order numbers and first names are kept for debuggability.
+- **Alternative:** no redaction (it's a local demo), or dropping user text entirely.
+- **Why:** traces are the artifact most likely to get pasted into a bug report or shared. Masking keeps the domain (useful for debugging typos) without the identity. **Exception:** escalation tickets (`logs/handoffs.jsonl`) keep the full email, because support needs it to contact the customer. In production that file would be a ticketing system with access control. A full PII pass (names, addresses, free text) is a production step.

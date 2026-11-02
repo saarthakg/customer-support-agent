@@ -4,6 +4,7 @@ This file knows nothing about orders, products or promotions. It runs whatever
 tools the enabled skills provide, which is why adding a skill never touches it.
 """
 
+import hashlib
 import json
 import logging
 import time
@@ -36,6 +37,9 @@ SUPERVISOR_FALLBACK_REPLY = (
 
 
 class ChatModel(Protocol):
+    model: str
+    temperature: float
+
     def complete(self, messages: list[dict], tools: list[dict]) -> LLMResponse: ...
 
 
@@ -75,7 +79,12 @@ class Agent:
         self.tracer = tracer
         self.on_tool_call = on_tool_call
         self.max_tool_iterations = max_tool_iterations
-        self.messages: list[dict] = [{"role": "system", "content": build_system_prompt(skills)}]
+        system_prompt = build_system_prompt(skills)
+        self.messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        # Fingerprint of everything that shapes behavior besides the model itself, so any
+        # traced reply can be tied to the exact prompt + tool contract that produced it.
+        config_blob = json.dumps({"system": system_prompt, "tools": self.tool_schemas}, sort_keys=True)
+        self.prompt_hash = hashlib.sha256(config_blob.encode()).hexdigest()[:12]
         self.supervisor = Supervisor()
         self.turn_count = 0
 
@@ -172,4 +181,11 @@ class Agent:
     def _trace(self, user_text: str, result: TurnResult) -> None:
         if self.tracer is None:
             return
-        self.tracer.write({"turn": self.turn_count, "user": user_text, **asdict(result)})
+        self.tracer.write({
+            "turn": self.turn_count,
+            "model": self.llm.model,
+            "temperature": self.llm.temperature,
+            "prompt_hash": self.prompt_hash,
+            "user": user_text,
+            **asdict(result),
+        })

@@ -4,43 +4,11 @@ import json
 
 import pytest
 
-from agent.llm import LLMError, LLMResponse, ToolCall
+from agent.llm import LLMError
 from agent.loop import FALLBACK_REPLY, SUPERVISOR_FALLBACK_REPLY, Agent
 from agent.prompt import build_system_prompt
-from agent.registry import Deps, Skill, Tool, build_skills
-
-
-class FakeLLM:
-    """Returns pre-scripted responses in order and records what it was sent."""
-
-    def __init__(self, *responses: LLMResponse | Exception) -> None:
-        self.responses = list(responses)
-        self.seen_messages: list[list[dict]] = []
-
-    def complete(self, messages, tools):
-        self.seen_messages.append([dict(m) for m in messages])
-        item = self.responses.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
-
-
-def text(content: str) -> LLMResponse:
-    return LLMResponse(content, [], 10, 5, 1)
-
-
-def calls(*tool_calls: tuple[str, str]) -> LLMResponse:
-    return LLMResponse(None, [ToolCall(f"call_{i}", n, a) for i, (n, a) in enumerate(tool_calls)], 10, 5, 1)
-
-
-def echo_skill(handler=None) -> Skill:
-    tool = Tool(
-        name="echo",
-        description="Echo a word.",
-        parameters={"type": "object", "properties": {"word": {"type": "string"}}, "required": ["word"]},
-        handler=handler or (lambda word: {"ok": True, "echo": word}),
-    )
-    return Skill(name="Echo", instructions="Use echo when asked.", tools=(tool,))
+from agent.registry import Deps, build_skills
+from tests.fakes import FakeLLM, calls, echo_skill, text
 
 
 def test_plain_reply_without_tools():
