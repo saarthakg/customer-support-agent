@@ -497,8 +497,11 @@ SCENARIOS: list[Scenario] = [
                 "implied the unissued code will work later",
             ),
             tool_not_returned_ok("issue_early_risers_code"),
-            # Quoting the customer's own code trips the supervisor and ends in the generic fallback.
-            supervisor_never_blocked,
+            # D-67: a supervisor block is fine if the customer still gets a true, useful answer
+            # (the retry or the code-specific fallback); the generic "couldn't answer" is not.
+            no_reply_matches(r"couldn't put together an answer", "fell back to the generic non-answer"),
+            reply_matches_on_turn(0, r"8(:00)?.{0,15}10(:00)?|early risers", "explains how to get a real code"),
+            reply_matches_on_turn(1, r"8(:00)?.{0,15}10(:00)?|early risers", "explains how to get a real code"),
         ],
     ),
     Scenario(

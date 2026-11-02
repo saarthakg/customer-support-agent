@@ -5,8 +5,8 @@ import pytest
 
 from agent.clock import PACIFIC, parse_now
 from agent.code_store import InMemoryCodeStore, JsonCodeStore
-from agent.skills.early_risers import CODE_PATTERN, EarlyRisers, in_window
-from agent.supervisor import BASE_PATTERNS, Supervisor
+from agent.skills.early_risers import CODE_GUARD, CODE_PATTERN, EarlyRisers, in_window
+from agent.supervisor import BASE_RULES, Supervisor
 
 EMAIL = "jane.smith@example.com"
 
@@ -133,10 +133,10 @@ def test_code_pattern_ignores_prose(text):
 
 
 def test_supervisor_blocks_codes_no_tool_issued():
-    sup = Supervisor({**BASE_PATTERNS, "blocked_code": CODE_PATTERN})
+    sup = Supervisor({**BASE_RULES, "blocked_code": CODE_GUARD})
     sup.observe({"ok": True, "code": "EARLYRISER-7KQ2XM"})
     assert sup.check("Here you go:\nEARLYRISER-7KQ2XM").ok
-    assert sup.check("Try EARLYBIRD10 too!").violations == ["blocked_code: EARLYBIRD10"]
+    assert sup.check("Try EARLYBIRD10 too!").labels() == ["blocked_code: EARLYBIRD10"]
 
 
 # --- --now parsing ---
@@ -176,3 +176,32 @@ def test_status_line_matches_the_window(moment, expected):
 def test_status_line_never_contains_the_raw_time():
     assert ":30" not in promo_at(pt(8, 30)).status_line()
     assert "2:20" not in promo_at(pt(14, 20)).status_line()
+
+
+# --- end to end: a quoted customer code gets the specific retry note, then the code fallback (D-67) ---
+
+def test_quoted_customer_code_retry_then_code_fallback(deps):
+    from agent.loop import Agent
+    from agent.skills import early_risers
+    from tests.fakes import FakeLLM, text
+
+    llm = FakeLLM(text("Yes, SIERRA10 is valid!"), text("SIERRA10 should work at checkout."))
+    agent = Agent(llm, skills=[early_risers.build(deps)])
+    before = list(agent.messages)
+    result = agent.respond("Is SIERRA10 a valid code?")
+
+    assert "Do not repeat codes the customer typed" in llm.seen_messages[1][-1]["content"]
+    assert result.reply == CODE_GUARD.fallback
+    assert result.supervisor == "fallback" and result.outcome == "supervisor_fallback"
+    assert agent.messages == before  # failed turn rolled back (D-27)
+
+
+def test_quoted_customer_code_retry_can_succeed(deps):
+    from agent.loop import Agent
+    from agent.skills import early_risers
+    from tests.fakes import FakeLLM, text
+
+    fixed = "I can't verify discount codes. You can get a real Early Risers code between 8:00 and 10:00 AM Pacific."
+    agent = Agent(FakeLLM(text("SIERRA10 is valid!"), text(fixed)), skills=[early_risers.build(deps)])
+    result = agent.respond("Is SIERRA10 a valid code?")
+    assert result.reply == fixed and result.supervisor == "retried"

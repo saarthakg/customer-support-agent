@@ -15,6 +15,7 @@ from agent.clock import PACIFIC, Clock
 from agent.code_store import CodeStore
 from agent.data import normalize_email
 from agent.registry import Deps, Skill, Tool
+from agent.supervisor import GuardRule
 
 DISCOUNT_PERCENT = 10
 # Half-open window [08:00, 10:00) Pacific: 10:00:00 is outside (D-20).
@@ -31,6 +32,19 @@ _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 # look-alikes ("EARLYBIRD10", "SIERRA10"). Case-sensitive on purpose: prose like
 # "the Early Risers promotion" must not match.
 CODE_PATTERN = re.compile(r"\b(?:EARLY-?(?:RISERS?|BIRD)|SIERRA)(?:-[A-Z0-9]+|\d+)\b")
+# What the supervisor says when a code no tool issued shows up in a draft (D-67). Code-written,
+# so even a twice-blocked reply still tells the customer something true and useful.
+CODE_GUARD = GuardRule(
+    CODE_PATTERN,
+    quoted_correction=(
+        "Do not repeat codes the customer typed. Say you can't validate codes, "
+        "and explain how to get a real Early Risers code."
+    ),
+    fallback=(
+        "I can't verify discount codes. Only codes I issue in this chat are valid, "
+        "and Early Risers codes are available 8:00–10:00 AM Pacific."
+    ),
+)
 
 INSTRUCTIONS = f"""\
 The Early Risers promotion is a {DISCOUNT_PERCENT}% discount code, available only {WINDOW_TEXT}. \
@@ -51,7 +65,10 @@ already_issued is true, say this is the same code they were given earlier today.
 minimum spend, exclusions, or redemption steps beyond "use it at checkout".
 - outside_promo_window: no code. Say the promotion runs {WINDOW_TEXT}, mention the current Pacific time from \
 the tool, and invite them back. Keep it friendly and brief.
-- invalid_email: ask them to re-check their email."""
+- invalid_email: ask them to re-check their email.
+- You can't validate codes. Only a code issue_early_risers_code returned in this chat is real. If the customer \
+asks about any other code, don't repeat it; say you can't verify codes, never imply it will work (now or later), \
+and explain how to get a real one: ask for it between 8:00 and 10:00 AM Pacific."""
 
 
 def generate_code() -> str:
@@ -141,6 +158,6 @@ def build(deps: Deps) -> Skill:
                 handler=promo.issue_early_risers_code,
             ),
         ),
-        guarded_values={"blocked_code": CODE_PATTERN},
+        guarded_values={"blocked_code": CODE_GUARD},
         turn_context=promo.status_line,
     )

@@ -16,7 +16,7 @@ from agent import config
 from agent.llm import LLMError, LLMResponse, assistant_message, tool_result_message
 from agent.prompt import build_system_prompt
 from agent.registry import Skill, Tool
-from agent.supervisor import BASE_PATTERNS, Supervisor
+from agent.supervisor import BASE_RULES, Supervisor
 from agent.trace import Tracer
 
 logger = logging.getLogger(__name__)
@@ -94,8 +94,8 @@ class Agent:
         # traced reply can be tied to the exact prompt + tool contract that produced it.
         config_blob = json.dumps({"system": system_prompt, "tools": self.tool_schemas}, sort_keys=True)
         self.prompt_hash = hashlib.sha256(config_blob.encode()).hexdigest()[:12]
-        skill_patterns = {kind: p for s in skills for kind, p in s.guarded_values.items()}
-        self.supervisor = Supervisor({**BASE_PATTERNS, **skill_patterns})
+        skill_rules = {kind: rule for s in skills for kind, rule in s.guarded_values.items()}
+        self.supervisor = Supervisor({**BASE_RULES, **skill_rules})
         self.context_providers = [s.turn_context for s in skills if s.turn_context]
         self.previous_calls: set[str] = set()
         self.turn_count = 0
@@ -110,6 +110,7 @@ class Agent:
         start = time.monotonic()
         history_len = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
+        self.supervisor.note_customer_message(user_text)
         result = TurnResult(reply=FALLBACK_REPLY, outcome="loop_limit")
         result.turn_context = [provide() for provide in self.context_providers]
         malformed_rounds = 0
@@ -148,15 +149,15 @@ class Agent:
                     if result.supervisor == "not_run":
                         result.supervisor = "pass"
                     break
-                result.supervisor_blocked += verdict.violations
+                result.supervisor_blocked += verdict.labels()
                 if result.supervisor == "retried":  # the one retry is used up
-                    result.reply = SUPERVISOR_FALLBACK_REPLY
+                    result.reply = self.supervisor.fallback(verdict) or SUPERVISOR_FALLBACK_REPLY
                     result.outcome = "supervisor_fallback"
                     result.supervisor = "fallback"
                     break
                 # One corrective retry: swap the bad draft for a system note and ask again.
                 result.supervisor = "retried"
-                self.messages[-1] = {"role": "system", "content": Supervisor.correction(verdict)}
+                self.messages[-1] = {"role": "system", "content": self.supervisor.correction(verdict)}
         except LLMError as e:
             logger.warning("model call failed: %s", e)
             result.outcome = "llm_error"

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from agent.data import Datasets, normalize_email, normalize_order_number
 from agent.registry import Deps, Skill, Tool
+from agent.supervisor import GuardRule
 
 # No 0/O, 1/I/L: IDs get read aloud and retyped.
 _ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -94,5 +95,5 @@ def build(deps: Deps) -> Skill:
                 handler=desk.escalate_to_human,
             ),
         ),
-        guarded_values={"blocked_ticket": TICKET_ID_PATTERN},
+        guarded_values={"blocked_ticket": GuardRule(TICKET_ID_PATTERN)},
     )
