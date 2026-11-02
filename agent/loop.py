@@ -36,6 +36,11 @@ SUPERVISOR_FALLBACK_REPLY = (
 )
 
 
+# Tool-call errors that mean the model produced a broken call (as opposed to a valid call
+# with a business outcome like "order_not_found"). The model gets one retry after these.
+MALFORMED_CALL_ERRORS = frozenset({"unknown_tool", "invalid_arguments"})
+
+
 class ChatModel(Protocol):
     model: str
     temperature: float
@@ -54,7 +59,7 @@ class ToolCallRecord:
 @dataclass
 class TurnResult:
     reply: str
-    outcome: str  # "ok" | "loop_limit" | "llm_error" | "supervisor_fallback"
+    outcome: str  # "ok" | "loop_limit" | "llm_error" | "supervisor_fallback" | "malformed_tool_call"
     supervisor: str = "not_run"  # "pass" | "retried" (blocked, then fixed) | "fallback" (blocked twice) | "not_run"
     supervisor_blocked: list[str] = field(default_factory=list)  # e.g. ["blocked_url: https://..."]
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
@@ -99,6 +104,7 @@ class Agent:
         history_len = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
         result = TurnResult(reply=FALLBACK_REPLY, outcome="loop_limit")
+        malformed_rounds = 0
 
         try:
             for _ in range(self.max_tool_iterations):
@@ -109,13 +115,19 @@ class Agent:
                 self.messages.append(assistant_message(response))
 
                 if response.tool_calls:
-                    for call in response.tool_calls:
-                        record = self._run_tool(call.name, call.arguments)
+                    records = [self._run_tool(call.name, call.arguments) for call in response.tool_calls]
+                    for call, record in zip(response.tool_calls, records):
                         result.tool_calls.append(record)
                         self.supervisor.observe(record.result)
                         self.messages.append(tool_result_message(call.id, record.result))
                         if self.on_tool_call:
                             self.on_tool_call(record)
+                    # The error went back to the model as an observation; it gets one round to fix it.
+                    if any(r.result.get("error") in MALFORMED_CALL_ERRORS for r in records):
+                        malformed_rounds += 1
+                        if malformed_rounds > 1:
+                            result.outcome = "malformed_tool_call"
+                            break
                     continue
 
                 # A final reply: check it before the customer sees it.

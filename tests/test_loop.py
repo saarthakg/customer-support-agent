@@ -144,3 +144,36 @@ def test_supervisor_allows_links_returned_by_tools():
     skill = echo_skill(lambda word: {"ok": True, "tracking_url": url})
     agent = Agent(FakeLLM(calls(("echo", '{"word": "x"}')), text(f"Track it:\n{url}")), skills=[skill])
     assert agent.respond("track").supervisor == "pass"
+
+
+# --- malformed tool calls: error goes back as an observation, one retry, then fallback ---
+
+def test_malformed_json_gets_one_retry_then_succeeds():
+    llm = FakeLLM(calls(("echo", '{"word": "summ')), calls(("echo", '{"word": "summit"}')), text("Done."))
+    result = Agent(llm, skills=[echo_skill()]).respond("go")
+    # The parse error was fed back to the model as a tool observation before its retry.
+    first_observation = json.loads(llm.seen_messages[1][-1]["content"])
+    assert first_observation["error"] == "invalid_arguments"
+    assert result.outcome == "ok" and result.reply == "Done."
+
+
+def test_second_malformed_round_falls_back_and_rolls_back():
+    llm = FakeLLM(calls(("echo", "{bad")), calls(("echo", "{still bad")), text("never reached"))
+    agent = Agent(llm, skills=[echo_skill()])
+    before = list(agent.messages)
+    result = agent.respond("go")
+    assert result.outcome == "malformed_tool_call"
+    assert result.reply == FALLBACK_REPLY
+    assert result.model_calls == 2
+    assert agent.messages == before
+
+
+def test_parallel_malformed_calls_count_as_one_round():
+    llm = FakeLLM(calls(("echo", "{bad"), ("nope", "{}")), calls(("echo", '{"word": "ok"}')), text("Done."))
+    assert Agent(llm, skills=[echo_skill()]).respond("go").outcome == "ok"
+
+
+def test_business_errors_do_not_count_as_malformed():
+    not_found = echo_skill(lambda word: {"ok": False, "error": "order_not_found"})
+    llm = FakeLLM(*[calls(("echo", '{"word": "x"}')) for _ in range(3)], text("Couldn't find it."))
+    assert Agent(llm, skills=[not_found]).respond("go").outcome == "ok"

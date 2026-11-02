@@ -220,3 +220,9 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Choice:** `trace.redact()` masks every email anywhere in a record (user text, tool args, tool results, replies) as `j***@example.com` before writing. Order numbers and first names are kept for debuggability.
 - **Alternative:** no redaction (it's a local demo), or dropping user text entirely.
 - **Why:** traces are the artifact most likely to get pasted into a bug report or shared. Masking keeps the domain (useful for debugging typos) without the identity. **Exception:** escalation tickets (`logs/handoffs.jsonl`) keep the full email, because support needs it to contact the customer. In production that file would be a ticketing system with access control. A full PII pass (names, addresses, free text) is a production step.
+
+### D-39 Malformed tool calls: one retry, then fallback · Accepted
+- **Found:** a malformed call (bad JSON, missing required argument, unknown tool) already went back to the model as a structured tool observation, but the model could retry until the iteration cap (5 model calls).
+- **Choice:** count *rounds* containing a malformed call. The first round's error goes back as an observation and the model retries. A second malformed round ends the turn with the in-voice "please try again" fallback (`outcome: "malformed_tool_call"`), and the turn is rolled back (D-27). Business errors (`order_not_found`, `outside_promo_window`, …) don't count, because they're valid calls with an answer the model must relay.
+- **Alternative:** count individual calls, which would punish two parallel bad calls with no retry, or rely on the iteration cap.
+- **Why:** a model that fails to form a call twice in a row is unlikely to fix it on the third try. Failing fast saves latency and tokens, and it's a distinct, traceable outcome instead of a generic `loop_limit`.
