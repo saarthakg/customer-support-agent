@@ -73,7 +73,7 @@ Expect **the same code** and `"already_issued": true` in the tool result. The ca
 python -m agent.main --debug --now 2026-11-03T14:20
 ```
 Type: `Do you have any discounts right now?` and then `yes please`
-Expect a mention of Early Risers with its hours (only because they asked about discounts), then `→ issue_early_risers_code({})` → `outside_promo_window`, with "it's 2:20 PM PT". It **never asks for an email**.
+Expect a mention of Early Risers with its hours (only because they asked about discounts), then `→ issue_early_risers_code({})` → `outside_promo_window`, with "it's 2:20 PM PT", and no request for an email. (Measured 5/6: occasionally the model asks for an email first. If it does, say so, and point to it in the README's known flakes. It's an honest example of why reliability is reported as pass^k.)
 
 **Boundaries.** The same request at each time shows the half-open window:
 ```bash
