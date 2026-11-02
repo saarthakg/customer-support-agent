@@ -19,9 +19,10 @@ from agent.trace import Tracer
 
 logger = logging.getLogger(__name__)
 
+# Promotions are deliberately absent: they're mentioned only when a customer asks (DECISIONS D-21).
 GREETING = (
-    "Welcome to Sierra Outfitters! 🏔️ I can check on an order, help you find gear "
-    "from our catalog, or tell you about our Early Risers promotion. What can I help with today?"
+    "Welcome to Sierra Outfitters! 🏔️ I can check on an order or help you find gear "
+    "from our catalog. What can I help with today?"
 )
 FALLBACK_REPLY = (
     "Sorry, I hit a snag on the trail and couldn't finish that. Could you try again in a moment?"

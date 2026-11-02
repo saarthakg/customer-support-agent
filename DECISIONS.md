@@ -194,3 +194,8 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 ### D-34 Submission zip = `git archive` · Accepted
 - **Choice:** `git archive --format=zip -o sierra-outfitters-agent.zip HEAD`.
 - **Why:** only tracked files ship, so `.env`, `.venv/`, `logs/`, and the confidential *Interviewing at Sierra* PDF (git-ignored) are excluded by construction rather than by remembering to delete them. Verified by listing the archive.
+
+### D-35 No promotion advertising in greeting or self-introduction (amends D-21, D-29) · Accepted
+- **Found:** the fixed greeting advertised Early Risers to everyone at any hour, and the model's self-introduction listed "promotions" (session 5ee19862). That came from the scope rule in GLOBAL_RULES, which literally listed "orders, products, promotions".
+- **Choice:** the greeting lists only order status and product help. GLOBAL_RULES tells the model to describe only those two when introducing itself, and to discuss promotions only when the customer asks about discounts. A unit test guards the greeting, and the self-introduction was checked live (3/3 runs clean).
+- **Why:** D-21 already said "never unprompted", and the greeting was a contradiction of our own making. A scope list in the prompt is also something the model reads as a menu to recite.

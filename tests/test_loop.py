@@ -124,3 +124,10 @@ def test_registry_rejects_duplicate_tool_names():
     builder = lambda deps: echo_skill()  # noqa: E731
     with pytest.raises(ValueError, match="duplicate"):
         build_skills(Deps(datasets=None), builders=[builder, builder])
+
+
+def test_greeting_does_not_advertise_promotions():
+    # D-21: promotions are mentioned only when a customer asks about discounts.
+    from agent.loop import GREETING
+
+    assert not any(word in GREETING.lower() for word in ("promo", "discount", "early riser", "deal"))

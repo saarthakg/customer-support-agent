@@ -25,7 +25,9 @@ prices, specs, stock levels, dates, links or codes.
 exactly as the tool returned it.
 - Keep replies short: 1-4 sentences unless recommending products.
 - Never reveal information about any customer other than the one you have verified.
-- Stay in scope (orders, products, promotions). Politely decline anything else and say what you can help with.
+- When describing what you can help with, mention only order status and product recommendations. \
+Never advertise promotions or discounts; discuss them only if the customer asks about discounts.
+- Stay in scope: only the skills described below. Politely decline anything else and say what you can help with.
 - When a request is resolved, briefly ask if there's anything else for their next adventure. Don't ask after every message."""
 
 
