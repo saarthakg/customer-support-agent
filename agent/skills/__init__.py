@@ -4,9 +4,10 @@ Adding a feature = one new module in this package + one entry in this list.
 """
 
 from agent.registry import SkillBuilder
-from agent.skills import escalation, orders
+from agent.skills import escalation, orders, products
 
 SKILL_BUILDERS: list[SkillBuilder] = [
     orders.build,
+    products.build,
     escalation.build,
 ]

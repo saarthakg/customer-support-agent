@@ -277,3 +277,27 @@ Entries D-01–D-25 were reviewed at the end of Phase 0. Those not explicitly di
 - **Choice:** each turn record has `redundant_tool_calls`, the number of calls identical (tool and arguments) to one made earlier in the conversation. It's visible in `--debug`.
 - **Alternative:** cache results, or tell the model not to repeat.
 - **Why:** measure before optimizing. Re-lookups are harmless (static data, no side effects, idempotent issuance) and cheap at this scale. The count shows whether they're common enough to be worth a prompt rule or a result cache.
+
+---
+
+## Phase 2: products
+
+### D-50 Products tool contract · Accepted
+- **Choice:** `list_products()` takes no arguments and returns all 10 products as `{sku, name, description, inventory, low_stock}`, plus `catalog_notes`: "no prices, sizes, colors or shipping information". Descriptions are passed through exactly as in the data. Tags are withheld (D-02), and `low_stock = inventory <= 20` is computed in code (D-03).
+- **Why `catalog_notes`:** the most common hallucinations in the before-grounding exhibit were prices and sizes. Saying in the tool result itself that they don't exist puts the fact next to the data the model is reading.
+
+### D-51 Product spec rules, each added in response to a measured failure · Accepted
+1. **Look before asking.** "Product question" is defined to include any mention of gear, shopping, or a planned activity, even vague. Before this, 3 of 8 transcripts asked a clarifying question before calling `list_products`, and one invented non-catalog categories. After: `list_products` was called first in every product transcript.
+2. **Judge fit from the description, never the name.** The energy drink's *name* says "energy", but its *description* says programming. The model kept pitching it as trail fuel.
+3. **No category teasers.** "I can help with backpacks, energy drinks, or other essentials" is a stretched recommendation in disguise. The spec says to name a product only if its description fits, and otherwise to ask what else they need.
+4. **No need stated means ask, don't guess.** For "some gear", the model asks what they're planning instead of picking three products at random.
+- **Kept as model judgment, not policed:** protein bars as "energy on the trail" (their description does say "provide the energy and nutrition you need") and the teleporting shoes as a playful weekend pick (grounded, labelled as unique). An instruction against the protein-bar use was removed because the model visibly ignored it, and contradicted instructions are worse than none.
+
+### D-52 Scenario checks must match claims, not mentions · Accepted
+- **Found:** two of my own checks were wrong. `NO_PRICES` flagged the agent echoing the customer's "$50 budget", and the size check flagged the correct refusal "I can't confirm boots in size 10.5".
+- **Choice:** both now match positive claims only ("costs $49", "$12.99", "available in size 10.5"), and each was verified against claim and non-claim examples before re-running.
+- **Why:** a scenario check is code that grades the model. A false failure wastes tuning effort on a non-problem, and a false pass is worse. Checks get the same scrutiny as tools.
+
+### D-53 Identifier reuse made explicit (amends D-45) · Accepted
+- **Found:** after products were added, the mismatch scenario failed intermittently. "Please double-check both" made the model doubt the email it already had.
+- **Choice:** the spec now says that changing one value means keeping the other, that asking them to double-check doesn't erase what they gave you, and to never re-ask for a value you have. Measured 5/5 after (pass^5).

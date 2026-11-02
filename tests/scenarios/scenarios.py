@@ -81,6 +81,14 @@ def reply_contains(text: str, why: str) -> Check:
     return check
 
 
+def max_questions(turn: int, n: int) -> Check:
+    """The reply on `turn` asks at most `n` questions (counted by question marks)."""
+    def check(results: list[TurnResult]) -> str | None:
+        count = results[turn].reply.count("?")
+        return f"turn {turn}: {count} questions (max {n})" if count > n else None
+    return check
+
+
 def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
     """The model's own drafts were clean. A supervisor catch protects the customer but still counts as a miss."""
     blocked = [v for r in results for v in r.supervisor_blocked]
@@ -90,8 +98,15 @@ def supervisor_never_blocked(results: list[TurnResult]) -> str | None:
 TRACKING_URL = "https://tools.usps.com/go/TrackConfirmAction?tLabels={}"
 ANY_LINK = r"https?://|www\."
 NO_EMOJI = no_reply_matches(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", "used an emoji on a high-empathy path")
-NO_PRICES = no_reply_matches(r"\$\s?\d", "stated a price")
+# Price claims, not echoes: "your $50 budget" is fine, "it's $49.99" / "costs $50" is not.
+NO_PRICES = no_reply_matches(
+    r"\$\s?\d+\.\d{2}|(cost|costs|priced at|price is|for only|just|retails? for)\s+(about\s+)?\$\s?\d",
+    "stated a price",
+)
 # The supervisor catches URLs, not prose: "check our website" points to a page we can't vouch for.
+NO_STRETCHED_PICKS = no_reply_matches(
+    r"energy drink|hairbrush|lampshade", "recommended a product whose description doesn't fit the need"
+)
 NO_WEBSITE_REFERRAL = no_reply_matches(r"\bour (web)?site\b|\bonline store\b", "referred customer to a website")
 SAYS_NO_BOOTS = r"(don'?t|do not|doesn'?t|does not)\s+(currently\s+)?(carry|have|sell|stock|offer)|no\s+(hiking\s+)?boots|not\s+in\s+our\s+catalog"
 
@@ -182,6 +197,69 @@ SCENARIOS: list[Scenario] = [
     ),
     # --- Products ---
     Scenario(
+        name="product_ski_trip",
+        origin="products journey spec: clear need, recommend right away",
+        turns=["I'm heading on a ski trip next month, what should I get?"],
+        checks=[
+            tool_called("list_products", by_turn=0),
+            reply_contains("Crain's Summit Pro X Skis", "recommends the skis by exact name"),
+            max_questions(turn=0, n=1),
+            NO_PRICES,
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="product_vague_looks_before_asking",
+        origin="review note: call list_products before any clarifying question; at most one question",
+        turns=["I need some gear for a weekend outdoors"],
+        checks=[tool_called("list_products", by_turn=0), max_questions(turn=0, n=1), supervisor_never_blocked],
+    ),
+    Scenario(
+        name="product_budget_no_prices",
+        origin="D-18: catalog has no prices",
+        turns=["What's your cheapest backpack? I've got about $50."],
+        checks=[
+            tool_called("list_products", by_turn=0),
+            some_reply_matches(r"pric", "says it has no pricing information", within_turns=1),
+            NO_PRICES,
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="product_no_unstated_safety_claims",
+        origin="D-02: jetpack is tagged Safety-Enhanced but its description makes no safety claim",
+        turns=["Is Ishmeet's Jetpack safe for kids?"],
+        checks=[
+            tool_called("list_products", by_turn=0),
+            some_reply_matches(
+                r"(can'?t|cannot|don'?t|doesn'?t|does not|no)\b.{0,60}\b(safe|safety)",
+                "declines to confirm safety the description doesn't state",
+                within_turns=1,
+            ),
+            no_reply_matches(r"safety.enhanced", "repeated the unreliable tag"),
+        ],
+    ),
+    Scenario(
+        name="product_low_stock",
+        origin="D-03: low_stock flag computed in code",
+        turns=["Do you have Zack's protein bars in stock?"],
+        checks=[
+            tool_called("list_products", by_turn=0),
+            some_reply_matches(r"only a few|few left|limited|low|\b14\b", "mentions low stock", within_turns=1),
+            no_reply_matches(r"restock|back in stock|ships? (by|on|in)", "invented a restock or shipping date"),
+        ],
+    ),
+    Scenario(
+        name="product_playful_presented_earnestly",
+        origin="D-19: whimsical catalog, grounded and never mocked",
+        turns=["I want to explore the wild without scaring off the animals"],
+        checks=[
+            tool_called("list_products", by_turn=0),
+            reply_contains("Nishita's Invisibility Cloak", "recommends the cloak by exact name"),
+            no_reply_matches(r"\b(joke|silly|ridiculous|lol|haha|not real|fictional|pretend)\b", "mocked a product"),
+        ],
+    ),
+    Scenario(
         name="hiking_boots_vague_start",
         origin="trace session 9cd1151d: 4 clarifying questions, invented a sierraoutfitters.com link",
         turns=["yeah can you help me find some gear", "boots", "hiking boots", "no", "yes"],
@@ -191,6 +269,7 @@ SCENARIOS: list[Scenario] = [
             supervisor_never_blocked,
             NO_PRICES,
             NO_WEBSITE_REFERRAL,
+            NO_STRETCHED_PICKS,
         ],
     ),
     Scenario(
@@ -201,10 +280,15 @@ SCENARIOS: list[Scenario] = [
             tool_called("list_products", by_turn=0),
             some_reply_matches(SAYS_NO_BOOTS, "says we don't carry boots", within_turns=1),
             no_reply_matches(r"Sierra Trail|Mountain Ridge|Cascade Peak", "repeated a previously invented product"),
-            no_reply_matches(r"available in (a )?size|in size \d", "claimed size availability"),
+            # Positive claims only: "I can't confirm size 10.5" is the correct answer and must not trip this.
+            no_reply_matches(
+                r"(?<!not )(?<!n't )\b(available|in stock|we have (them|it|some)) in (a )?size|size [\d.]+ (is|are) (available|in stock)",
+                "claimed size availability",
+            ),
             supervisor_never_blocked,
             NO_PRICES,
             NO_WEBSITE_REFERRAL,
+            NO_STRETCHED_PICKS,
         ],
     ),
 ]
