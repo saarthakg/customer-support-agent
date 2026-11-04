@@ -342,6 +342,29 @@ SCENARIOS: list[Scenario] = [
             some_reply_matches(r"e-?mail", "asks for the email", within_turns=1),
         ],
     ),
+    Scenario(
+        name="order_two_numbers_one_message",
+        origin="edge-case audit: two order numbers in one message, one of them someone else's (D-72)",
+        turns=["can you check W001 and W005? my email is john.doe@example.com"],
+        checks=[
+            tool_returned("lookup_order", order_number="#W001", status="delivered"),
+            reply_contains(TRACKING_URL.format("TRK123456789"), "W001 link verbatim"),
+            # W005 is Charlie's: the agent may say it couldn't find it, but nothing about it may leak.
+            no_reply_matches(r"Charlie|SOBN008|TRK112233445", "leaked another customer's order"),
+            supervisor_never_blocked,
+        ],
+    ),
+    Scenario(
+        name="order_non_english",
+        origin="edge-case audit: a Spanish-speaking customer (D-74)",
+        turns=["Hola, ¿dónde está mi pedido? Es el W002 y mi correo es jane.smith@example.com"],
+        checks=[
+            tool_returned("lookup_order", order_number="#W002", status="in-transit"),
+            reply_contains(TRACKING_URL.format("TRK987654321"), "tracking link verbatim"),
+            some_reply_matches(r"\b(pedido|está|envío|camino|enviado)\b", "replies in Spanish", within_turns=1),
+            supervisor_never_blocked,
+        ],
+    ),
     # --- Early Risers (clock frozen via `now`; times without an offset are Pacific) ---
     Scenario(
         name="promo_explicit_request_in_window",

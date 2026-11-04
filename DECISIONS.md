@@ -1,7 +1,7 @@
 # Decisions log
 
 Each entry records the choice, the alternative considered, and the reason. Entries are added when a decision is made, not reconstructed at the end.
-Every entry is **Accepted** (final). **★ Headline** marks the decisions the README's design section leads with.
+Every entry is **Accepted** (final). **★ Headline** marks the decisions the README's design section leads with. **policy** marks a change to business policy rather than robustness.
 
 Entries were written as the work happened, in build order: planning, the core loop, then one skill at a time, then fixes found in live testing.
 
@@ -396,3 +396,56 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Choice:** two global rules. Requests unrelated to the store (homework, poems, other companies) get a polite decline plus what the agent can help with. Store requests that no tool handles (returns, cancellations, exchanges, damaged items) get "I can't do that here" plus an offer to pass it to the support team, and the agent never pretends it did them.
 - **Why:** a customer with a store problem shouldn't hit a dead end. The handoff skill exists for exactly that, and filing still waits for the customer's yes.
 - **Result (k=3):** `trust_cancel_not_claimed` 0/3 → 3/3 ("I can't process cancellations here. Would you like me to pass your request to our support team?"). `trust_no_invented_returns_link` stays 0/3: the model treats "a link to your returns page" as a link request, not a returns request, so the rule doesn't fire. That gap is left open; proposed fix: say in the scope rule that a request for a page, link or form about a no-tool store topic counts as that store request.
+
+---
+
+## Pre-submission round: failure handling, edge-case audit, assumptions review
+
+Baseline for this round: the previous commit, rerun at k=2 on all 30 scenarios. 26/30 pass^2 (55/60 runs). Misses: `trust_no_invented_returns_link` 0/2, `order_error_escalates` 1/2, `trust_cancel_not_claimed` 1/2, `product_playful_presented_earnestly` 1/2 (no emoji). At k=5: `order_error_escalates` 4/5, `trust_no_invented_returns_link` 0/5.
+
+### D-69 A request for a page, link or form about a no-tool store topic is that store request (amends D-68) · Accepted
+- **Found (D-68):** "Give me a link to your returns page" got an honest "I can't provide a link" but no handoff offer (0/5 at baseline). The model read it as a link request, not a returns request.
+- **Choice:** one sentence added to the store-request rule in `GLOBAL_RULES`: a request for a page, link or form about one of these topics ("a link to your returns page") is that same store request, so say you don't have one and offer the handoff.
+- **Alternative:** a returns skill. That's a new journey, kept out of scope on purpose (it's the live-extension starting point).
+- **Result:** `trust_no_invented_returns_link` 0/5 → 5/5 at k=5, and 2/2 in the full k=2 run. `trust_cancel_not_claimed` 2/2 in the same run (it was 1/2 at baseline).
+
+### D-70 The lookup result says the identity is verified; the spec forbids reading identifiers back (amends D-53) · Accepted
+- **Found:** the 4 failing traces of `order_error_escalates` all show the same thing. The detour happens *before* the lookup: "Just to confirm, your email is … and your order number is W004, correct?" One run asked for the email again because it "came after the order number". So the model was confirming identifiers nobody had verified yet, which used up the 3-turn script.
+- **Choice (two parts, same idea as D-64: code states the fact, the spec says to trust it):**
+  - `lookup_order` success results carry `identity_verified: true`. The result stays in history, so every later model call sees it. The spec says never to ask for or re-confirm verified identifiers, and to reuse them (for example for a handoff).
+  - For the pre-lookup detour, which is what the traces actually show: the spec says `lookup_order` *is* the verification, so once you have both values, call it right away and never read them back first.
+- **Test:** `test_verified_identity_reaches_the_model_on_later_turns` runs a lookup and a second turn through the real loop, and asserts that the model's next request contains the tool result with `identity_verified: true` and a spec with both rules.
+- **Alternative:** a per-turn `turn_context` line ("verified: #W004"). That's more machinery for a fact the tool result already carries in history.
+- **Result:** `order_error_escalates` 4/5 → 5/5 at k=5, and 2/2 in the full k=2 run.
+
+### D-71 Empty and over-long messages are answered by code, without a model call · Accepted · policy
+- **Found (edge-case audit):** the CLI skipped blank lines, but `Agent.respond("")` called the model. A message of any length went straight to the model: a 100 KB paste costs tokens, can bury the instructions, and would be written to the trace in full.
+- **Choice:** `Agent._reject_input` runs before anything else. A blank message gets a code-written "What can I help with?". A message over `config.MAX_MESSAGE_CHARS` (2,000) gets "That message is longer than I can take in one go. Could you send just the key details…". Neither reaches the model or history. Both are traced, with the user text truncated to the limit.
+- **Alternative:** truncate and send (the model would answer half a message as if it were whole), or no limit.
+- **Policy flag:** 2,000 characters is a product choice. It's about 10x a long support message, and well under what would be a problem for the model.
+
+### D-72 Normalization tolerates pasted text; two order numbers are ambiguous (extends D-11) · Accepted
+- **Found (edge-case audit):** the spec tells the model to pass values "exactly as the customer typed them", so "john.doe@example.com." (sentence punctuation) or "it's W001, thanks" could reach the tool. The email version was worse than a format error: it passed validation, matched nothing, and **counted as a failed lookup** toward the lockout.
+- **Choice:** `normalize_email` strips the wrapping a paste carries (`<>`, quotes, trailing `.,;:!?`, `mailto:`). `normalize_order_number` strips trailing punctuation, and otherwise accepts exactly one W-number inside other text. Two W-numbers return `None` (`invalid_order_number`, which doesn't count toward the lockout), because guessing could look up the wrong order. A SKU like `SOWB004` never matches. Bare digits still only count on their own ("order 2 please" is rejected).
+- **Alternative:** have the model clean values (that's normalization in the prompt, which D-11 rejected).
+
+### D-73 A corrupt code store is moved aside, and the promotion keeps working · Accepted · policy
+- **Found (edge-case audit):** a corrupt or hand-edited `state/issued_codes.json` crashed the CLI at startup with a traceback.
+- **Choice:** `JsonCodeStore._load` checks that the file is a JSON object of codes. If it isn't (bad JSON, non-UTF-8 bytes, wrong shape), it renames it to `issued_codes.json.corrupt-<timestamp>`, logs a warning and starts empty.
+- **Alternative:** fail closed, i.e. refuse to start until someone fixes the file, the way bad datasets do.
+- **Policy flag:** this chooses availability over same-day idempotency. If the file is lost, a customer who already got today's code could get a second one. For a 10% promotion in peak season, that's cheaper than the promotion (and the CLI) being down. The datasets still fail closed, because a wrong order answer is worse than no answer.
+
+### D-74 Reply in the customer's language; handoff summaries stay in English · Accepted · policy
+- **Found (edge-case audit):** nothing said what to do with a non-English message. A Spanish order question got an English answer every time (0/5).
+- **Choice:** a VOICE line: reply in the language of the customer's latest message. Tool results are in English, so translate the facts but keep product names, links, codes and ticket IDs exactly as returned. The escalation spec says ticket summaries are in English, because the support team reads them. New scenario `order_non_english`.
+- **Alternative:** English only, with a polite note. That's simpler, but turns away customers the model could serve.
+- **Result: not reliable.** The first wording, in the global rules, stayed 0/5. Moved to the top of VOICE and made explicit about translating tool facts: 2/5, then 0/2 in the full run. The English tool results pull the reply into English. Per the one-fix rule, this is reported, not chased. The proper fix (tools return customer-facing text in the conversation's language, or a language fact computed in code) is more than this round's budget. It's listed in the README's known limitations and the design notes. Keeping the rule costs nothing, and it doesn't regress other scenarios (31/32 in the full run).
+- **Policy flag:** reply language is a product decision.
+
+### D-75 Remaining edge-case fixes · Accepted
+- **Ctrl-C while the agent is answering** used to print a traceback. The CLI loop now exits cleanly, like Ctrl-D.
+- **Datasets:** a record that isn't an object, `ProductsOrdered` that isn't a list of SKUs, an `Inventory` that isn't an integer, and non-UTF-8 bytes now fail at startup with a clear `DataError`, instead of a `TypeError` mid-chat.
+- **Tests for paths that already worked but were untested:** the openai client's timeout, rate-limit, connection and 5xx errors all become `LLMError`, and the client uses the configured timeout and retries (`tests/test_llm.py`). The CLI loop handles blank lines, exit words, Ctrl-D, Ctrl-C, a missing key and a bad data directory (`tests/test_main.py`). Data loading handles missing files, bad JSON and wrong shapes.
+- **Assumptions review, no change:** status meanings, the `[08:00, 10:00)` window, "explicitly requests", the email identity key, one code per email per Pacific day, the 3-failure lockout, no prices, missing SKUs, the template tracking links, the simulated handoff and withheld tags were each re-examined. All stay. The reasons are in `docs/design_notes.md` section 2.
+
+**Round result (full suite, k=2, final prompt):** 31/32 pass^2, 62/64 runs (97%), up from 26/30 and 55/60 (92%). The only miss is `order_non_english` (D-74). `product_playful_presented_earnestly` was 2/2 this time; it stays in the known flakes because it has missed before.

@@ -7,7 +7,7 @@ Run top to bottom. Every step lists what to type and what you should see. Total 
 ```bash
 cd sierra-outfitters-agent        # the folder the submission zip extracts to (or your clone)
 conda deactivate 2>/dev/null; source .venv/bin/activate   # prompt shows (.venv), not (base)
-pytest -q                                                 # expect: 139 passed
+pytest -q                                                 # expect: 187 passed
 rm -rf state/                                             # fresh promo-code store for the demo
 python -m agent.main --help                               # shows --debug and --now
 ```

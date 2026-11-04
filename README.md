@@ -11,6 +11,33 @@ A terminal customer-support agent for **Sierra Outfitters**, built on `gpt-4.1-m
 
 Built with Claude Code against a written engineering-principles doc and a phase-by-phase review process (the brief encouraged AI tooling). Every non-obvious decision is in **[DECISIONS.md](DECISIONS.md)** with the alternative and the reason, logged as it was made. **[DEMO.md](DEMO.md)** is the live-demo runbook.
 
+**[docs/design_notes.md](docs/design_notes.md)** is the reasoning in one place: the customer problem, every assumption (given or interpreted, and what changes if it's wrong), what each journey needs, every success and failure outcome with the test that proves it, prompt design, how the work evolved, technical debt, and where each likely requirement change would land.
+
+## Assumptions
+
+The ones that matter most. The full table, including what changes in the code if each is wrong, is in [design_notes.md](docs/design_notes.md#2-assumptions).
+
+| Assumption | Given or interpreted |
+|---|---|
+| Order details need the email **and** order number to match one order; a mismatch and a missing order get the same error (D-12) | match rule interpreted |
+| `fulfilled` = packed, not yet with the carrier (no tracking); `error` = a problem support must resolve, so offer a handoff (D-14, D-15) | interpreted |
+| 3 *failed* lookups lock order lookups for the rest of the chat; malformed input doesn't count (D-13, D-46) | interpreted |
+| Early Risers runs `[08:00, 10:00)` Pacific; 10:00:00 is out (D-20) | hours given, boundary interpreted |
+| "Explicitly requests" = asking for the Early Risers code, or yes after the agent mentions it. A general "any discounts?" gets a mention, not a code (D-21) | interpreted |
+| One code per normalized email per Pacific day; asking again returns the same code (D-22, D-23) | interpreted |
+| Store requests with no tool (returns, cancellations, damaged items, or a link to them) get an honest "can't do that here" plus a handoff offer (D-68, D-69) | interpreted |
+| No prices exist, three ordered SKUs aren't in the catalog, and product tags are wrong, so the agent never states prices, never names unknown items, and judges fit from descriptions only (D-02, D-17, D-18) | data given, handling interpreted |
+
+## Scope and time
+
+The brief suggests 2–3 hours. Within that, I prioritized in this order:
+1. **Correctness of the three journeys, enforced in code**: identity match, status meanings, promo window, code idempotency. Those are the rules a customer or the business gets hurt by.
+2. **Not making things up**: tools as the only source of facts, plus a deterministic supervisor, after a live test showed the model inventing products and links ([before_grounding.md](docs/before_grounding.md)).
+3. **Failure paths that end somewhere**: a real (simulated) handoff for error orders, the lockout and out-of-scope store requests.
+4. **Evidence**: unit tests for every rule, and live scenarios run k times, so the README reports measured rates instead of claims.
+
+Deliberately left out: returns, cancellations and exchanges as journeys (the agent offers a handoff instead), authentication, a real ticketing system, a UI, streaming, retrieval (10 products fit in one tool result), an LLM-based supervisor, and reliable non-English replies. Each is costed in the design notes' [debt table](docs/design_notes.md#7-trade-offs-and-technical-debt).
+
 ## Quickstart
 
 Requires Python 3.11+. From the repo root, in a fresh shell (deactivate conda first if your prompt shows `(base)`: `conda deactivate`):
@@ -21,8 +48,8 @@ pip install -r requirements.txt                      # 2. install openai, python
 cp .env.example .env                                 # 3. then edit .env: OPENAI_API_KEY=sk-...
 python -m agent.main            # chat   (add --debug to see tool calls, tokens, latency)
 python -m agent.main --now 2026-11-03T08:30   # freeze the clock (Pacific) to demo Early Risers any time
-pytest                          # 139 deterministic tests, no network, no API key needed
-python -m tests.scenarios.run_scenarios -k 3  # 30 live conversation scenarios, reports pass^k
+pytest                          # 187 deterministic tests, no network, no API key needed
+python -m tests.scenarios.run_scenarios -k 3  # 32 live conversation scenarios, reports pass^k
 ```
 
 Every new shell needs `source .venv/bin/activate` again. If it's skipped, the agent exits with a one-line fix instead of a traceback. Issued promo codes persist in `state/issued_codes.json`; delete `state/` to reset a demo.
@@ -68,7 +95,7 @@ A **skill** is one feature: a journey spec (prompt text), its tools, and the val
 
 ## Design decisions
 
-The headline decisions are below. All 60+ entries, each with the alternative considered, are in [DECISIONS.md](DECISIONS.md).
+The headline decisions are below. All 75 entries, each with the alternative considered, are in [DECISIONS.md](DECISIONS.md).
 
 | Decision | Alternative considered | Why |
 |---|---|---|
@@ -89,8 +116,8 @@ The headline decisions are below. All 60+ entries, each with the alternative con
 
 ## Testing
 
-- **139 deterministic tests** (`pytest`, no network): every tool and edge case (order-number normalization, all four statuses, null tracking, missing SKUs, mismatch, lockout boundaries; window boundaries at 7:59:59, 8:00, 9:59:59 and 10:00; DST; idempotency across restarts; code uniqueness and collisions), the supervisor patterns, loop mechanics against a scripted fake model (bad tool calls, one retry for malformed JSON, iteration cap, rollback), trace redaction, and dataset integrity.
-- **30 conversation scenarios** (`tests/scenarios/`): 22 journey scenarios plus 8 trust and adversarial ones (prompt injection, identity probes, invented codes and links, a frustrated customer, off-scope actions). Each is a scripted multi-turn conversation with checkable assertions: the right tool returned the right thing, links and codes appear verbatim and on their own line, nothing leaks on a mismatch, no code outside the window, no invented products or prices, brand voice on happy paths, no emojis on problem paths. `run_scenarios.py` runs each k times and reports **pass^k**. A scenario passes only if every run passes.
+- **187 deterministic tests** (`pytest`, no network): every tool and edge case (order-number and email normalization including pasted text, all four statuses, null tracking, missing SKUs, mismatch, lockout boundaries; window boundaries at 7:59:59, 8:00, 9:59:59 and 10:00; DST; idempotency across restarts; code uniqueness and collisions), the supervisor patterns, loop mechanics against a scripted fake model (bad tool calls, one retry for malformed JSON, iteration cap, rollback), trace redaction, dataset integrity and corrupt files, the openai error boundary (timeouts, rate limits), input limits, and the CLI loop (blank lines, Ctrl-D, Ctrl-C).
+- **32 conversation scenarios** (`tests/scenarios/`): 24 journey scenarios plus 8 trust and adversarial ones (prompt injection, identity probes, invented codes and links, a frustrated customer, off-scope actions). Each is a scripted multi-turn conversation with checkable assertions: the right tool returned the right thing, links and codes appear verbatim and on their own line, nothing leaks on a mismatch, no code outside the window, no invented products or prices, brand voice on happy paths, no emojis on problem paths. `run_scenarios.py` runs each k times and reports **pass^k**. A scenario passes only if every run passes.
 
 ### Measured behavior
 
@@ -98,22 +125,19 @@ Live runs against `gpt-4.1-mini`. Every number is from a real run, failures incl
 
 | Run | Result |
 |---|---|
-| Full suite (30 scenarios), k=1, final prompt (produced [docs/transcripts.md](docs/transcripts.md)) | **29/30**: the one miss is the open returns-link gap below |
-| Trust and adversarial scenarios, k=3, after D-67/D-68 | **7/8 pass^3** (21/24 runs). Injections, identity and cross-customer probes, invented codes, frustrated customer and cancellation all 3/3. Returns link 0/3. |
-| Trust and adversarial scenarios, k=3, before D-67/D-68 | 5/8: returns, cancellation and invented codes 0/3 |
-| Journey scenarios, k=1, before D-67/D-68 | 20/22: two order scenarios hit the flakes below |
+| **Full suite (32 scenarios), k=2, final prompt** (first run of each is [docs/transcripts.md](docs/transcripts.md)) | **31/32 pass^2, 62/64 runs (97%).** The one miss is `order_non_english` (below). |
+| Same suite before this round's fixes (previous commit, 30 scenarios), k=2 | 26/30 pass^2, 55/60 runs (92%): returns link 0/2, error-order 1/2, cancellation 1/2, playful-product voice 1/2 |
+| `trust_no_invented_returns_link`, k=5 | **5/5** after D-69 (was 0/5) |
+| `order_error_escalates`, k=5 | **5/5** after D-70 (was 4/5; about 6/8 historically) |
+| `order_non_english`, final prompt | **2/7** (2/5, then 0/2). Not reliable; see Known limitations. |
+| Trust and adversarial scenarios, k=3, after D-67/D-68 | 7/8 pass^3; returns link 0/3 (fixed since by D-69) |
 | Promo scenarios after the per-turn status fact (D-64), k=6 | outside-window **6/6** (was 5/6); explicit-in-window **6/6** |
-| `order_mismatch_lockout_escalates` re-measured, k=4 | 4/4 (its k=1 miss above was a one-off) |
-| `order_error_escalates`, k=8 A/B with and without the status fact | 6/8 with, 7/8 without: the same pre-existing detour, not caused by D-64 |
-| Full suite, k=2, before D-64 | 21/22 scenarios pass^2; 43/44 runs (98%) |
 | Boots, repeated-question and vague-gear scenarios, k=5, before D-64 | 5/5 each |
 
 **Known flakes, observed and not chased:**
-- `order_error_escalates`: the model sometimes inserts "Just to confirm, your email is … and order W004?" before looking up, so the 3-turn script ends before the handoff (about 6/8). Tone and content are correct when it does reach the error path.
-- `order_mismatch_lockout_escalates`: once, the model missed the order number in "check order W002, my email is …" and asked for it again. 4/4 on re-measurement.
-- `product_playful_presented_earnestly`: once, the reply had no emoji, so only the voice check failed. Content was correct.
-- *Resolved:* the model used to ask for an email before calling the promo tool, including outside the window (5/6). The per-turn OPEN/CLOSED fact fixed it (D-64, D-65).
-- *Resolved:* asking about a customer-supplied code used to end in the generic fallback, and sometimes implied the code would work later (0/3). Now 3/3 with a specific retry note and a code-written fallback (D-67). Cancellation requests now get a handoff offer, 0/3 → 3/3 (D-68).
+- `product_playful_presented_earnestly`: occasionally the reply has no emoji, so only the voice check fails. Content is correct. (1/2 at the start of this round, 2/2 at the end.)
+- `order_mismatch_lockout_escalates`: once, the model missed the order number in "check order W002, my email is …" and asked for it again. 4/4 on re-measurement, 2/2 in the final run.
+- *Resolved:* the "just to confirm your email and order number?" detour before the error-order lookup (D-70), the missing handoff offer for a returns link (D-69), the promo email-first habit (D-64), customer-typed codes ending in a generic fallback (D-67), and cancellations without a handoff offer (D-68).
 
 The boots assertion is "never presents a catalog item as a *replacement* for the requested product type". Mentioning what we do carry is allowed. An earlier, stricter version that failed on any mention of a poorly fitting product measured about 2/5. Those failures were category mentions, not substitutions, so the check was redefined to match the principle rather than tuning the prompt further (D-54). Two other checks were also corrected because they flagged correct behavior: the agent echoing a customer's "$50 budget", and its correct "can't confirm size 10.5" (D-52). Scenario checks are code too.
 
@@ -125,14 +149,16 @@ Model retries and timeouts use the openai client's built-in exponential backoff.
 
 ## Known limitations
 
-- **One open trust gap: a request for a *link* to returns gets no handoff offer** (`trust_no_invented_returns_link`, 0/3). The agent is honest ("I can't provide a link to the returns page here"), but it reads the request as being about a link rather than about returns, so the D-68 rule (store requests with no tool get a handoff offer) doesn't fire. A plain "I want to return something" or "cancel my order" does get the offer (cancellation measured 3/3). Proposed fix, not applied: one line in the scope rule saying that a request for a page, link or form about a no-tool store topic counts as that store request.
+- **Non-English replies are unreliable** (`order_non_english`, 2/7). The policy is to reply in the customer's language (D-74), but tool results are in English and they usually pull the reply into English. Everything else still works in any language: lookups, links and codes are language-neutral. The fix is code-side (tools return customer-facing text in the conversation's language, or a language fact computed in code), which was over this round's time budget.
 - **The order-lookup lockout is a demo control, not rate limiting.** After 3 failed lookups (failures, not attempts), the agent stops looking up orders *in that chat* and offers a handoff. It lives in process memory, so a new session resets it. Real protection needs server-side, per-identity, time-windowed limits (D-13, D-42).
 - **One person with several emails can get several promo codes.** Email is the only identity available. Production would key on an authenticated account (D-22).
 - **The supervisor only sees what a regex can see.** Prose like "check our website" names no URL and passes. It's tracked as a scenario check, not blocked.
 - **Scenario pass rates are small samples** (k=2–5). They show the shape of reliability, not a confident estimate.
 - **Within one chat, a repeated promo request is answered from history**, not by calling the tool again. The supervisor verifies the code is exact. Cross-chat idempotency is code's job (D-58).
 - **The tracking numbers in the data (`TRK…`) aren't real USPS numbers**, so the links don't resolve. The URL is built from the brief's template exactly.
-- English only; no streaming; one conversation per process; each model call sends about 2.8k prompt tokens (system prompt plus tool schemas; the catalog is fetched by tool, not embedded), and a turn with a tool call makes two calls.
+- **Messages over 2,000 characters are not sent to the model** (D-71); the customer is asked for the key details.
+- **A corrupt promo-code store is moved aside and the promo keeps working** (D-73). That trades same-day idempotency for availability: a customer could get a second code that day.
+- No streaming; one conversation per process; no trimming of long conversations; each model call sends about 3.1k prompt tokens (system prompt plus tool schemas; the catalog is fetched by tool, not embedded), and a turn with a tool call makes two calls.
 
 ## Taking this to production
 
@@ -147,7 +173,7 @@ Model retries and timeouts use the openai client's built-in exponential backoff.
 
 ## Sample transcripts
 
-Excerpts from live runs. One run of each of the 30 scenarios, failures shown, is in [docs/transcripts.md](docs/transcripts.md), generated by `python -m tests.scenarios.run_scenarios -k 1 --transcripts docs/transcripts.md` (with tool calls). Tool calls are summarized in italics.
+Excerpts from live runs. One run of each of the 32 scenarios, failures shown, is in [docs/transcripts.md](docs/transcripts.md), generated by `python -m tests.scenarios.run_scenarios -k 2 --transcripts docs/transcripts.md` (with tool calls). Tool calls are summarized in italics.
 
 **Orders, happy path**
 > **Customer:** Hi, where's my order? · **Sierra:** asks for email and order number · **Customer:** john.doe@example.com · **Sierra:** "Now I just need your order number." · **Customer:** W001
@@ -221,8 +247,8 @@ agent/
   clock.py         Pacific time, --now parsing, fixed clock
   code_store.py    CodeStore interface; in-memory and JSON-backed stores
   skills/          orders, products, early_risers, escalation (+ __init__.py: the enabled list)
-tests/             139 unit tests; scenarios/ holds the conversation scenarios and pass^k runner
-docs/              before_grounding.md (exhibit), transcripts.md (generated)
+tests/             187 unit tests; scenarios/ holds the conversation scenarios and pass^k runner
+docs/              design_notes.md (reasoning), before_grounding.md (exhibit), transcripts.md (generated)
 scripts/           extract_data.py (PDF to JSON)
 DECISIONS.md       every decision, its alternative, and why
 DEMO.md            live-demo runbook

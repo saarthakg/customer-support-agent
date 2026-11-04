@@ -6,8 +6,15 @@ from pathlib import Path
 
 import pytest
 
+from agent import config
 from agent.llm import LLMError
-from agent.loop import FALLBACK_REPLY, SUPERVISOR_FALLBACK_REPLY, Agent
+from agent.loop import (
+    EMPTY_MESSAGE_REPLY,
+    FALLBACK_REPLY,
+    SUPERVISOR_FALLBACK_REPLY,
+    TOO_LONG_REPLY,
+    Agent,
+)
 from agent.prompt import build_system_prompt
 from agent.registry import Deps, build_skills
 from tests.fakes import FakeLLM, calls, echo_skill, text
@@ -82,6 +89,28 @@ def test_llm_error_returns_fallback_and_rolls_back_history():
     assert result.outcome == "llm_error"
     assert result.reply == FALLBACK_REPLY
     assert agent.messages == before
+
+
+@pytest.mark.parametrize("message, outcome", [("", "empty_message"), ("   \n\t", "empty_message")])
+def test_empty_message_is_answered_by_code(message, outcome):
+    llm = FakeLLM()  # no scripted responses: any model call would fail the test
+    agent = Agent(llm, skills=[])
+    result = agent.respond(message)
+    assert (result.outcome, result.reply) == (outcome, EMPTY_MESSAGE_REPLY)
+    assert llm.seen_messages == [] and len(agent.messages) == 1
+
+
+def test_over_long_message_is_never_sent_to_the_model(tmp_path):
+    from agent.trace import Tracer
+
+    llm = FakeLLM(text("Sure."))
+    agent = Agent(llm, skills=[], tracer=Tracer(tmp_path / "t.jsonl", "s"))
+    result = agent.respond("x" * (config.MAX_MESSAGE_CHARS + 1))
+    assert (result.outcome, result.reply) == ("message_too_long", TOO_LONG_REPLY)
+    assert llm.seen_messages == [] and len(agent.messages) == 1
+    assert len(json.loads((tmp_path / "t.jsonl").read_text())["user"]) == config.MAX_MESSAGE_CHARS  # trace stays bounded
+    # A message at the limit goes through, and the conversation continues normally.
+    assert agent.respond("y" * config.MAX_MESSAGE_CHARS).reply == "Sure."
 
 
 def test_system_prompt_includes_each_skill_spec():

@@ -80,20 +80,23 @@ def main() -> int:
         print(f"{DIM}[clock frozen at {args.now.astimezone(PACIFIC):%Y-%m-%d %I:%M %p} Pacific]{RESET}")
     print(f"\nSierra: {agent.greet()}\n")
 
-    while True:
-        try:
-            user_text = input("You: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not user_text:
-            continue
-        if user_text.lower() in EXIT_WORDS:
-            break
-        result = agent.respond(user_text)
-        if args.debug:
-            _print_turn_stats(result)
-        print(f"\nSierra: {result.reply}\n")
+    try:
+        while True:
+            try:
+                user_text = input("You: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not user_text:
+                continue
+            if user_text.lower() in EXIT_WORDS:
+                break
+            result = agent.respond(user_text)
+            if args.debug:
+                _print_turn_stats(result)
+            print(f"\nSierra: {result.reply}\n")
+    except KeyboardInterrupt:  # Ctrl-C while the agent is answering: exit like Ctrl-D, no traceback
+        print()
 
     if args.debug:
         u = llm.usage

@@ -22,4 +22,8 @@ REQUEST_TIMEOUT_S = 30.0
 # delegated to the openai client rather than re-implemented.
 MAX_RETRIES = 2
 
+# Longest customer message sent to the model. Real support messages are a few sentences;
+# anything far longer is a paste accident or an attempt to flood the context (D-71).
+MAX_MESSAGE_CHARS = 2000
+
 TIMEZONE = "America/Los_Angeles"

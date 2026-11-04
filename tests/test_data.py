@@ -47,3 +47,42 @@ def test_rejects_unknown_status(tmp_path):
     (tmp_path / "ProductCatalog.json").write_text("[]")
     with pytest.raises(DataError, match="unknown status"):
         load_datasets(tmp_path)
+
+
+def write_data(tmp_path, orders, products="[]"):
+    (tmp_path / "CustomerOrders.json").write_text(orders if isinstance(orders, str) else json.dumps(orders))
+    (tmp_path / "ProductCatalog.json").write_text(products if isinstance(products, str) else json.dumps(products))
+
+
+def test_missing_file_is_a_clear_data_error(tmp_path):
+    (tmp_path / "ProductCatalog.json").write_text("[]")
+    with pytest.raises(DataError, match="cannot load CustomerOrders.json"):
+        load_datasets(tmp_path)
+
+
+@pytest.mark.parametrize("content", ['[{"Email": ', "not json", "\xff\xfe"])
+def test_corrupt_file_is_a_clear_data_error(tmp_path, content):
+    write_data(tmp_path, content)
+    with pytest.raises(DataError, match="cannot load"):
+        load_datasets(tmp_path)
+
+
+@pytest.mark.parametrize("content, message", [("{}", "expected a JSON list"), ("[1, 2]", "expected an object")])
+def test_wrong_shape_is_a_clear_data_error(tmp_path, content, message):
+    write_data(tmp_path, content)
+    with pytest.raises(DataError, match=message):
+        load_datasets(tmp_path)
+
+
+def test_wrong_field_types_fail_at_startup_not_mid_chat(tmp_path):
+    order = {
+        "CustomerName": "A", "Email": "a@b.c", "OrderNumber": "#W1",
+        "ProductsOrdered": "SOBP001", "Status": "delivered", "TrackingNumber": None,
+    }
+    write_data(tmp_path, [order])
+    with pytest.raises(DataError, match="list of SKUs"):
+        load_datasets(tmp_path)
+    product = {"ProductName": "P", "SKU": "S1", "Inventory": "12", "Description": "d", "Tags": []}
+    write_data(tmp_path, [], [product])
+    with pytest.raises(DataError, match="Inventory must be an integer"):
+        load_datasets(tmp_path)

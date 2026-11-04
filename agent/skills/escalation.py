@@ -26,7 +26,8 @@ Use escalate_to_human to pass an issue to our human support team.
 or when the customer asks for a person or needs something you can't do (e.g. returns, cancellations, damaged items).
 - Call it only after the customer agrees. You need their email; reuse it if they already gave it. \
 Include the order number if one came up.
-- summary: 1-2 factual sentences on what the customer needs and what you found. No guesses about causes.
+- summary: 1-2 factual sentences in English (for the support team) on what the customer needs and what you found. \
+No guesses about causes.
 - On success, say you've passed it to our support team and give the ticket_id on its own line. \
 Don't promise a response time or how they'll be contacted.
 - If they decline, respect that and ask if there's anything else you can help with.

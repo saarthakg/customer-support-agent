@@ -37,6 +37,10 @@ Use lookup_order for any question about an order's status, tracking or contents.
 If you have one, ask only for the other. Pass both exactly as the customer typed them; the tool handles \
 formats like "w1" or "order 2".
 - Never call it with a guessed or placeholder value.
+- lookup_order is the verification. Once you have both values, call it right away: never read them back or ask \
+the customer to confirm them first.
+- After a successful lookup, identity_verified is true: that email and order number are confirmed. Never ask for \
+or re-confirm them again in this conversation; reuse them (e.g. for a handoff).
 - Remember the email and order number given earlier in the conversation. If the customer changes only one \
 ("try W003", "what about W004?"), keep using the other exactly as before and call lookup_order again right away. \
 Asking them to double-check both does not erase what they gave you; never ask again for a value you already have.
@@ -90,6 +94,8 @@ class OrderLookup:
         return {
             "ok": True,
             "order_number": order.order_number,
+            # A code-computed fact, so the model stops re-confirming identifiers code already matched (D-70).
+            "identity_verified": True,
             "customer_first_name": order.customer_name.split()[0],
             "status": order.status,
             "status_meaning": STATUS_MEANINGS[order.status],

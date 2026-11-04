@@ -35,6 +35,13 @@ SUPERVISOR_FALLBACK_REPLY = (
     "or help you find gear from our catalog. Could you try asking another way?"
 )
 
+# Code-written answers to messages the model never sees (D-71): nothing to answer, or too long to send.
+EMPTY_MESSAGE_REPLY = "I can check on an order or help you find gear from our catalog. What can I help with?"
+TOO_LONG_REPLY = (
+    "That message is longer than I can take in one go. Could you send just the key details, "
+    "like your order number and email or what you're shopping for?"
+)
+
 
 # Tool-call errors that mean the model produced a broken call (as opposed to a valid call
 # with a business outcome like "order_not_found"). The model gets one retry after these.
@@ -59,7 +66,8 @@ class ToolCallRecord:
 @dataclass
 class TurnResult:
     reply: str
-    outcome: str  # "ok" | "loop_limit" | "llm_error" | "supervisor_fallback" | "malformed_tool_call"
+    # "ok" | "loop_limit" | "llm_error" | "supervisor_fallback" | "malformed_tool_call" | "empty_message" | "message_too_long"
+    outcome: str
     supervisor: str = "not_run"  # "pass" | "retried" (blocked, then fixed) | "fallback" (blocked twice) | "not_run"
     supervisor_blocked: list[str] = field(default_factory=list)  # e.g. ["blocked_url: https://..."]
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
@@ -108,6 +116,10 @@ class Agent:
     def respond(self, user_text: str) -> TurnResult:
         self.turn_count += 1
         start = time.monotonic()
+        if rejected := self._reject_input(user_text):
+            # Answered by code: no model call, nothing added to history, still traced.
+            self._trace(user_text[: config.MAX_MESSAGE_CHARS], rejected)
+            return rejected
         history_len = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
         self.supervisor.note_customer_message(user_text)
@@ -170,6 +182,14 @@ class Agent:
         result.latency_ms = int((time.monotonic() - start) * 1000)
         self._trace(user_text, result)
         return result
+
+    @staticmethod
+    def _reject_input(user_text: str) -> TurnResult | None:
+        if not user_text.strip():
+            return TurnResult(reply=EMPTY_MESSAGE_REPLY, outcome="empty_message")
+        if len(user_text) > config.MAX_MESSAGE_CHARS:
+            return TurnResult(reply=TOO_LONG_REPLY, outcome="message_too_long")
+        return None
 
     def _with_context(self, context: list[str]) -> list[dict]:
         """History plus this turn's code-computed facts, placed right after the base system prompt.

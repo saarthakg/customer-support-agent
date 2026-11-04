@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from agent.data import normalize_email, normalize_order_number
@@ -22,8 +24,19 @@ def test_order_number_variants_normalize(raw):
     assert normalize_order_number(raw) == "#W001"
 
 
-@pytest.mark.parametrize("raw", ["", "order", "WX1", "W001 W002", "A001", "W-1"])
+@pytest.mark.parametrize(
+    "raw", ["W001.", "it's W001, thanks", "my order is #w001", "W001 please", "(W001)", "order W1!"]
+)
+def test_one_order_number_inside_other_text_is_extracted(raw):
+    # D-72: customers paste numbers mid-sentence; the model passes text "exactly as typed".
+    assert normalize_order_number(raw) == "#W001"
+
+
+@pytest.mark.parametrize(
+    "raw", ["", "order", "WX1", "W001 W002", "A001", "W-1", "W001 and W002", "SOWB004", "order 2 please"]
+)
 def test_unrecognizable_order_numbers(raw):
+    # Two order numbers are ambiguous, a SKU is not an order number, and bare digits only count on their own.
     assert normalize_order_number(raw) is None
 
 
@@ -31,6 +44,24 @@ def test_email_normalization():
     assert normalize_email("  John.Doe@Example.COM ") == "john.doe@example.com"
     assert normalize_email("john") is None
     assert normalize_email("john doe@example.com") is None
+
+
+@pytest.mark.parametrize("raw", ["john.doe@example.com.", "<john.doe@example.com>", "mailto:john.doe@example.com", '"john.doe@example.com",'])
+def test_email_wrapping_from_pastes_is_stripped(raw):
+    assert normalize_email(raw) == "john.doe@example.com"
+
+
+@pytest.mark.parametrize(
+    "raw", ["john@example", "john@@example.com", "@example.com", "john.doe@example.com jdoe@work.com", "a@x.com,b@y.com"]
+)
+def test_malformed_or_doubled_emails_are_rejected(raw):
+    assert normalize_email(raw) is None
+
+
+def test_pasted_punctuation_does_not_burn_a_lookup(lookup):
+    # Without stripping, "john.doe@example.com." was a valid-looking email that matched nothing: a counted failure.
+    assert lookup.lookup_order("john.doe@example.com.", "W001.")["ok"]
+    assert lookup.failed_lookups == 0
 
 
 # --- each status ---
@@ -112,6 +143,32 @@ def test_lockout_is_per_session(datasets):
     for n in (2, 3, 4):
         first.lookup_order("john.doe@example.com", f"W00{n}")
     assert OrderLookup(datasets).lookup_order("john.doe@example.com", "W001")["ok"]
+
+
+def test_success_says_identity_is_verified(lookup):
+    assert lookup.lookup_order("john.doe@example.com", "W001")["identity_verified"] is True
+
+
+def test_verified_identity_reaches_the_model_on_later_turns(deps):
+    # D-70: the fact lives in the tool result, which stays in history, so every later model call sees it.
+    from agent.loop import Agent
+    from agent.skills import orders
+    from tests.fakes import FakeLLM, calls, text
+
+    llm = FakeLLM(
+        calls(("lookup_order", '{"email": "bob.brown@example.com", "order_number": "W004"}')),
+        text("I'm sorry, there's a problem with order #W004. Shall I pass it to our support team?"),
+        text("Done."),
+    )
+    agent = Agent(llm, skills=[orders.build(deps)])
+    agent.respond("W004, bob.brown@example.com")
+    agent.respond("yes please")
+
+    next_turn = llm.seen_messages[2]
+    tool_results = [json.loads(m["content"]) for m in next_turn if m["role"] == "tool"]
+    assert tool_results and tool_results[0]["identity_verified"] is True
+    spec = next_turn[0]["content"]
+    assert "identity_verified is true" in spec and "never read them back" in spec
 
 
 def test_result_never_includes_email_or_full_name(lookup):

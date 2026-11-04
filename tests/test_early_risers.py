@@ -158,6 +158,17 @@ def test_json_store_survives_restart(tmp_path):
     assert JsonCodeStore(path).exists(first["code"])
 
 
+@pytest.mark.parametrize("content", ["{not json", "[]", '{"a|2026-11-03": 5}', "\xff"])
+def test_corrupt_store_is_moved_aside_and_promo_keeps_working(tmp_path, content):
+    # D-73: availability over same-day idempotency; the bad file is kept for inspection.
+    path = tmp_path / "issued_codes.json"
+    path.write_text(content, encoding="latin-1")
+    store = JsonCodeStore(path)
+    assert promo_at(pt(8, 30), store).issue_early_risers_code(EMAIL)["ok"]
+    assert len(list(tmp_path.glob("issued_codes.json.corrupt-*"))) == 1
+    assert JsonCodeStore(path).get(EMAIL, pt(8, 30).date())  # the new file is valid
+
+
 # --- per-turn eligibility fact (D-64) ---
 
 @pytest.mark.parametrize(
