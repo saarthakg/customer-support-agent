@@ -195,7 +195,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Why:** a live demo starts by running the code. Running in the wrong interpreter (e.g. conda base) is the most likely failure, and a traceback costs minutes to read under pressure. Verified from a fresh clone with an empty environment (`env -i`).
 
 ### D-34 Release archive = `git archive` · Accepted
-- **Choice:** `git archive --format=zip -o customer-agent.zip HEAD`.
+- **Choice:** `git archive --format=zip -o customer-support-agent.zip HEAD`.
 - **Why:** only tracked files ship, so `.env`, `.venv/`, `logs/`, and private local notes (git-ignored) are excluded by construction rather than by remembering to delete them. Verified by listing the archive.
 
 ### D-35 No promotion advertising in greeting or self-introduction (amends D-21, D-29) · Accepted

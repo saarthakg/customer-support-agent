@@ -5,7 +5,7 @@ Run top to bottom. Every step lists what to type and what you should see. Total 
 ## 0. Setup check (before you demo)
 
 ```bash
-cd customer-agent                 # the repo root
+cd customer-support-agent         # the repo root
 conda deactivate 2>/dev/null; source .venv/bin/activate   # prompt shows (.venv), not (base)
 pytest -q                                                 # expect: 187 passed
 rm -rf state/                                             # fresh promo-code store for the demo
