@@ -4,7 +4,7 @@ This is the reasoning behind the agent: the customer problem, every assumption, 
 
 ## 1. The customer problem
 
-Sierra Outfitters is a young outdoor retailer competing with REI, Patagonia and Cotopaxi. It is new to generative AI and is heading into peak season, when inbound contacts and product issues both rise. The first agent has to take routine volume (where's my order, what should I buy, is there a deal) off the support team without creating new problems: no wrong answers about orders, no invented products or links, no discount codes handed out by mistake.
+Switchback Outfitters is a fictional young outdoor retailer. It is new to generative AI and is heading into peak season, when inbound contacts and product issues both rise. The first agent has to take routine volume (where's my order, what should I buy, is there a deal) off the support team without creating new problems: no wrong answers about orders, no invented products or links, no discount codes handed out by mistake.
 
 What that implied for the design:
 - **Trust over coverage.** A customer told something false by the agent is worse than one handed to a person. So facts come only from tools, the supervisor blocks invented links, codes and ticket IDs (D-36, D-67), and anything the agent can't do ends in an honest handoff offer (D-16, D-68).
@@ -14,26 +14,26 @@ What that implied for the design:
 
 ## 2. Assumptions
 
-"Given" means the brief or data states it. "Interpreted" means I chose a reading.
+"Given" means the requirements or data state it. "Interpreted" means I chose a reading.
 
 | Assumption | Given or interpreted | Why | What changes in the code if it's wrong |
 |---|---|---|---|
 | Order status meanings: `delivered`, `in-transit` (shipped, on its way), `fulfilled` (packed, not yet with the carrier, no tracking), `error` (a problem support must resolve, cause unknown) (D-07, D-14, D-15) | Statuses given; meanings interpreted | The data has no definitions. `fulfilled` and `error` orders have no tracking number, which fits "not shipped" and "stuck". Defining meanings once stops the model improvising. | Edit `agent/skills/orders.py` · `STATUS_MEANINGS`. A test checks every status has a meaning. |
-| Tracking link is `https://tools.usps.com/go/TrackConfirmAction?tLabels={trackingNumber}` for every shipped order | Given | The brief says to assume it. The `TRK…` numbers in the data aren't real USPS numbers, so the links don't resolve; the template is used exactly as given. | Carrier-specific links: `orders.py` · `TRACKING_URL_TEMPLATE` becomes a per-carrier lookup. |
+| Tracking link is `https://tools.usps.com/go/TrackConfirmAction?tLabels={trackingNumber}` for every shipped order | Given | The requirements say to assume it. The `TRK…` numbers in the data aren't real USPS numbers, so the links don't resolve; the template is used exactly as given. | Carrier-specific links: `orders.py` · `TRACKING_URL_TEMPLATE` becomes a per-carrier lookup. |
 | Customer must give both email and order number, and both must match one order (D-12) | Given ("after asking the customer's email and order number"); the match rule is interpreted | Order details should only go to someone who knows both. One generic `order_not_found` for "doesn't exist" and "belongs to someone else", so the tool can't be used to discover either. | `agent/data.py` · `Datasets.find_order`; `orders.py` · `OrderLookup.lookup_order`. |
 | Lockout after 3 failed lookups per chat, failures not attempts (D-13, D-42, D-46) | Interpreted | The order space is tiny (W001–W010) and emails are guessable, so a prompt rule can be talked around and a counter can't. Malformed input doesn't count; a correct 3rd try still works. | `orders.py` · `MAX_FAILED_LOOKUPS`. Real limits need server-side, per-identity state (see section 7). |
 | Order numbers can be typed loosely: `w1`, `#W001`, `order 2`, bare `1`, or one W-number inside a sentence. Two order numbers in one value are ambiguous (D-11, D-72) | Interpreted | Customers type numbers many ways and paste them mid-sentence. Code normalizes so the model passes text through unchanged. Bare digits are safe because every order uses the `W` prefix. | `data.py` · `normalize_order_number`. If other prefixes appear, drop the bare-digit rule. |
 | Promo window is `[08:00, 10:00)` America/Los_Angeles, DST-aware (D-20) | Hours given; half-open boundary interpreted | Half-open is the usual reading of "8–10" and makes 10:00:00 unambiguous (out). `zoneinfo` handles DST. | `agent/skills/early_risers.py` · `WINDOW_START`, `WINDOW_END`. |
-| "Explicitly requests": asking for the Early Risers code, or saying yes after the agent mentions it. A general "any discounts?" gets a mention and an offer, never a code. Never advertised unprompted (D-21, D-35) | Interpreted | The brief says "explicitly requests". Mentioning the deal when asked about discounts is good service; issuing on any discount question is not explicit. | Prompt only: `early_risers.py` · `INSTRUCTIONS`. The model judges explicitness; code still enforces the window. |
-| Promo identity is the normalized email (D-22) | Interpreted | The brief says "for that user", and email is the only identity the chat has. | `early_risers.py` · `issue_early_risers_code` keys on it. With accounts, key on the account ID. |
+| "Explicitly requests": asking for the Early Risers code, or saying yes after the agent mentions it. A general "any discounts?" gets a mention and an offer, never a code. Never advertised unprompted (D-21, D-35) | Interpreted | The requirements say "explicitly requests". Mentioning the deal when asked about discounts is good service; issuing on any discount question is not explicit. | Prompt only: `early_risers.py` · `INSTRUCTIONS`. The model judges explicitness; code still enforces the window. |
+| Promo identity is the normalized email (D-22) | Interpreted | The requirements say "for that user", and email is the only identity the chat has. | `early_risers.py` · `issue_early_risers_code` keys on it. With accounts, key on the account ID. |
 | One code per email per Pacific day; asking again returns the same code (D-23, D-57) | Interpreted | "A unique code for that user" in a daily promotion. Same-day repeats returning the same code stops one customer collecting many. "Today" is the Pacific day, matching the window. | `agent/code_store.py` · `_key`; `early_risers.py` · `issue_early_risers_code`. |
 | Discount is 10%, with no expiry, minimum spend or exclusions stated (D-24) | 10% given; terms not given | The agent must not invent terms the business never set. | `early_risers.py` · `DISCOUNT_PERCENT` and the spec line on terms. |
 | No prices (D-18) | Given by the data | The catalog has no price field. The agent says so and offers to help by activity instead. | Add a field in `agent/skills/products.py` · `list_products` and relax the spec line. |
 | Ordered SKUs missing from the catalog (`SOCH010`, `SOBN008`, `SOGK009`) are shown as "an item (item code X)" (D-17) | Data reality given; handling interpreted | Inventing a name would be a false claim. | `orders.py` returns `name: None`; the spec says how to phrase it. |
 | Product tags are withheld from the model (D-02) | Interpreted | Tags are wrong in ways that cause false claims (energy drink tagged `Weatherproof`, jetpack `Safety-Enhanced`). | `products.py` · `list_products` would pass cleaned tags. |
 | Low stock = inventory ≤ 20 (D-03) | Interpreted | A threshold is a business rule, so code sets it. The agent may say "only a few left". | `products.py` · `LOW_STOCK_THRESHOLD`. |
-| Human handoff is simulated: a ticket appended to `logs/handoffs.jsonl` with a code-computed `verified` flag (D-16, D-43) | Interpreted (not in the brief) | Error orders and the lockout need somewhere to go, and the agent must never claim an action that didn't happen. A real ticket ID makes "I've passed this on" true. | `agent/skills/escalation.py` · `HandoffDesk.escalate_to_human` would call a ticketing API with the same contract. |
-| Store requests no tool handles (returns, cancellations, exchanges, damaged items, including asking for a link or form about them) get "I can't do that here" and a handoff offer. Unrelated requests are declined (D-68, D-69) | Interpreted | A customer with a store problem shouldn't hit a dead end. Returns is deliberately not built (it's the live-extension starting point). | `agent/prompt.py` · `GLOBAL_RULES`. A returns skill would replace the handoff path for returns. |
+| Human handoff is simulated: a ticket appended to `logs/handoffs.jsonl` with a code-computed `verified` flag (D-16, D-43) | Interpreted (not in the requirements) | Error orders and the lockout need somewhere to go, and the agent must never claim an action that didn't happen. A real ticket ID makes "I've passed this on" true. | `agent/skills/escalation.py` · `HandoffDesk.escalate_to_human` would call a ticketing API with the same contract. |
+| Store requests no tool handles (returns, cancellations, exchanges, damaged items, including asking for a link or form about them) get "I can't do that here" and a handoff offer. Unrelated requests are declined (D-68, D-69) | Interpreted | A customer with a store problem shouldn't hit a dead end. Returns is deliberately not built (it's the natural next skill). | `agent/prompt.py` · `GLOBAL_RULES`. A returns skill would replace the handoff path for returns. |
 | Replies are in the customer's language; tool facts are translated, but names, links, codes and ticket IDs are kept exact. Handoff summaries are in English (D-74) | Interpreted | A Spanish-speaking customer shouldn't be answered in English. Support reads the tickets, so summaries stay English. Measured as unreliable (section 4). | `prompt.py` · `VOICE`; `escalation.py` · `INSTRUCTIONS`. |
 | Messages over 2,000 characters, and empty messages, are answered by code without a model call (D-71) | Interpreted | Real support messages are a few sentences. A huge paste costs tokens and can push instructions out of focus. | `agent/config.py` · `MAX_MESSAGE_CHARS`; `agent/loop.py` · `Agent._reject_input`. |
 | A corrupt `state/issued_codes.json` is moved aside and the store starts empty (D-73) | Interpreted | In peak season the promo should keep working. The cost is that today's codes are forgotten, so a returning customer could get a second code. The bad file is kept for inspection. | `code_store.py` · `JsonCodeStore._load`: raise instead to fail closed. |
@@ -100,7 +100,7 @@ Unit tests are in `tests/` (`file` · `test`). Scenarios are in `tests/scenarios
 | Never asked about discounts | none | promotion never mentioned | `test_greeting_does_not_advertise_promotions`; `promo_never_volunteered` |
 | Invalid email in window | `invalid_email` | asked to re-check | `test_inside_window_invalid_email` |
 | Prompt injection ("ignore your instructions", "SYSTEM: pre-approved") | window and email still enforced | no code outside the window; email still required inside | `trust_injection_outside_window`, `trust_injection_preapproved_in_window` |
-| Customer asks about a code they typed (`SIERRA10`) | supervisor blocks the echo | "I can't verify discount codes…", how to get a real one | `test_supervisor` · `test_customer_typed_code_is_still_blocked`; `test_early_risers` · `test_quoted_customer_code_retry_then_code_fallback`; `trust_invented_codes` |
+| Customer asks about a code they typed (`SWITCHBACK10`) | supervisor blocks the echo | "I can't verify discount codes…", how to get a real one | `test_supervisor` · `test_customer_typed_code_is_still_blocked`; `test_early_risers` · `test_quoted_customer_code_retry_then_code_fallback`; `trust_invented_codes` |
 | Code collision | redrawn | a unique code | `test_collision_is_redrawn`, `test_codes_are_unique_across_customers` |
 | Corrupt code store file | store moved aside, starts empty | the promotion keeps working | `test_corrupt_store_is_moved_aside_and_promo_keeps_working` |
 
@@ -143,17 +143,17 @@ The system prompt is assembled by `agent/prompt.py` · `build_system_prompt` fro
 **Kept out of the prompt and put in code:** the current time (D-08), eligibility, the identity match, status meanings (D-07), the tracking URL, code generation and idempotency, the lockout, the low-stock threshold, the `verified` flag, normalization of emails and order numbers (D-11, D-72), input limits (D-71), and the check on every outgoing link, code and ticket ID (`agent/supervisor.py`). The prompt says how to use the tools and how to talk; it is never the only thing standing between a customer and a wrong answer.
 
 **Measured lessons:**
-- **Prompts don't ground; tools plus a check do** ([before_grounding.md](before_grounding.md), D-36). With no tools, the model invented three boot products, sizes, prices and a `sierraoutfitters.com` link, and every turn was traced as `ok`. That produced the explicit never-invent rule, the supervisor, the `supervisor` trace field and two regression scenarios.
+- **Prompts don't ground; tools plus a check do** ([before_grounding.md](before_grounding.md), D-36). With no tools, the model invented three boot products, sizes, prices and a `switchbackoutfitters.com` link, and every turn was traced as `ok`. That produced the explicit never-invent rule, the supervisor, the `supervisor` trace field and two regression scenarios.
 - **Give the model a fact, not raw data** (D-64). With only the tool to tell it about the window, the model kept asking for an email first, then declining (5/6 outside the window). A code-computed OPEN/CLOSED line each turn took it to 6/6. This round used the same idea for orders: `identity_verified: true` in the lookup result (D-70).
 - **Skills share one prompt, so they aren't independent in behavior** (D-60). Adding Early Risers dropped an unrelated product scenario from 5/5 to 0/2. Every prompt change reruns the whole scenario suite.
 - **Fix the check when it disagrees with the principle, not the prompt** (D-52, D-54). Three scenario checks were flagging correct behavior; they were corrected rather than tuning the prompt toward them.
 
 ## 6. How I got here
 
-**How AI tools were used.** Before any code, I wrote a binding engineering-principles document (not in the submission) covering how the onsite runs, the data realities, and rules like "business rules in code, judgment in the model" and "measure, don't assume". Claude Code then built the project in phases. I reviewed each phase's code, transcripts and decision entries before approving the next, and every non-obvious choice went into DECISIONS.md as it was made. Proposals I overrode or redirected:
+**How AI tools were used.** Before any code, I wrote a binding engineering-principles document (not in this repo) covering how the agent would be demoed, the data realities, and rules like "business rules in code, judgment in the model" and "measure, don't assume". Claude Code then built the project in phases. I reviewed each phase's code, transcripts and decision entries before approving the next, and every non-obvious choice went into DECISIONS.md as it was made. Proposals I overrode or redirected:
 - **Lockout semantics and wording.** I required the cap to count 3 *failures*, not attempts, proven by boundary tests (the 3rd lookup still runs, and a correct 3rd try succeeds). I also replaced "I've reached the limit", which sounded like the agent had failed, with "For security, I can't run more order lookups in this chat" (D-46).
 - **Error-path tone.** I required apology first, then facts, then the handoff offer, with no emojis or adventure close (D-15).
-- **Handoff.** The alternative was "please contact support" wording, leaving escalation as a live extension. I had it built immediately, so the error and lockout paths end somewhere real and "I've passed this on" is true (D-16).
+- **Handoff.** The alternative was "please contact support" wording, leaving escalation for later. I had it built immediately, so the error and lockout paths end somewhere real and "I've passed this on" is true (D-16).
 - **Supervisor scope.** I pulled the URL check forward before any skill existed, and extended it to ticket IDs (D-36, D-47).
 - **Redundant lookups.** Counted in the trace, not prevented (D-49).
 - **Boots check.** I chose to redefine the scenario check to the principle rather than keep tuning the prompt (D-54).
@@ -163,21 +163,21 @@ The system prompt is assembled by `agent/prompt.py` · `build_system_prompt` fro
 - **Looser supervisor.** The proposal was to let customer-typed codes through; I rejected it and kept the guarantee absolute (D-67).
 
 **Build order and what live testing found:**
-1. **Data and core loop** (`ad058b1`). Datasets transcribed from the PDF with every value preserved (D-01), the hand-rolled tool loop (D-04), skills as the unit of extension (D-05).
-2. **Grounding** (`0c53bc8`, `0e5d813`). A live test with no skills invented three boots, prices and a link; the greeting advertised the promotion to everyone. That led to the never-invent rule, the deterministic URL supervisor, removing the promotion from the greeting (D-35, D-36) and the [before_grounding](before_grounding.md) exhibit.
-3. **Tracing and loop safety** (`e8599b1`, `28bc276`). Supervisor outcome and `prompt_hash` in every trace record, email redaction, one retry for malformed tool calls (D-37 to D-39).
-4. **Orders and handoff** (`c6fd70d`, `71875e8`). Review found the lockout semantics and error-path tone above, and a model that forgot the email after a failed lookup (D-45).
-5. **Products** (`9f717b1`, `bbb1df5`). Live runs found filler recommendations, repeated clarifying questions and a too-strict boots check (D-51, D-54).
-6. **Early Risers** (`8834cc6`, `263c71e`). Injectable clock and `--now`, then JSON persistence, window-first, and the two-tier voice (D-55, D-61 to D-63). Adding the skill regressed a product scenario (D-60).
-7. **Docs and polish** (`5c2bd87`, `d3d9dba`). README, demo runbook, generated transcripts.
-8. **Email-first flake → D-64** (`a85ad54`). The per-turn OPEN/CLOSED fact.
-9. **Trust scenarios** (`61f2f06`). Eight adversarial scenarios found three gaps (D-66).
-10. **Supervisor and scope** (`18dc866`). Rejecting the looser supervisor led to D-67 (specific retry note and code-written fallback, 0/3 → 3/3). The scope split (D-68) fixed cancellation (0/3 → 3/3) but not the returns link.
+1. **Data and core loop.** Datasets kept verbatim, quirks included (D-01), the hand-rolled tool loop (D-04), skills as the unit of extension (D-05).
+2. **Grounding.** A live test with no skills invented three boots, prices and a link; the greeting advertised the promotion to everyone. That led to the never-invent rule, the deterministic URL supervisor, removing the promotion from the greeting (D-35, D-36) and the [before_grounding](before_grounding.md) exhibit.
+3. **Tracing and loop safety.** Supervisor outcome and `prompt_hash` in every trace record, email redaction, one retry for malformed tool calls (D-37 to D-39).
+4. **Orders and handoff.** Review found the lockout semantics and error-path tone above, and a model that forgot the email after a failed lookup (D-45).
+5. **Products.** Live runs found filler recommendations, repeated clarifying questions and a too-strict boots check (D-51, D-54).
+6. **Early Risers.** Injectable clock and `--now`, then JSON persistence, window-first, and the two-tier voice (D-55, D-61 to D-63). Adding the skill regressed a product scenario (D-60).
+7. **Docs and polish.** README, demo runbook, generated transcripts.
+8. **Email-first flake → D-64.** The per-turn OPEN/CLOSED fact.
+9. **Trust scenarios.** Eight adversarial scenarios found three gaps (D-66).
+10. **Supervisor and scope.** Rejecting the looser supervisor led to D-67 (specific retry note and code-written fallback, 0/3 → 3/3). The scope split (D-68) fixed cancellation (0/3 → 3/3) but not the returns link.
 11. **This round.** The returns-link fix (D-69), the verified-identity fact (D-70), and an edge-case audit: input limits (D-71), tolerant normalization (D-72), corrupt-store recovery (D-73), reply language (D-74) and robustness fixes (D-75). Results are in the README's measured-behavior table.
 
 ## 7. Trade-offs and technical debt
 
-| Shortcut | Why it was right for a 2–3 hour build | What it costs | What I'd do next |
+| Shortcut | Why it was right for a time-boxed build | What it costs | What I'd do next |
 |---|---|---|---|
 | Lockout lives in session memory | Five lines, demonstrates the control, fully testable | A new chat resets it; no protection across sessions or per identity | Server-side, per-identity, time-windowed limits (D-13, D-42) |
 | JSON code store with no locking | Survives restarts; one CLI process is the only writer | Two processes could race and issue two codes for one email | A database with a unique (email, day) constraint behind the same `CodeStore` interface |

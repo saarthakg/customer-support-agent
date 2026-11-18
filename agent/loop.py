@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Promotions are deliberately absent: they're mentioned only when a customer asks (DECISIONS D-21).
 GREETING = (
-    "Welcome to Sierra Outfitters! 🏔️ I can check on an order or help you find gear "
+    "Welcome to Switchback Outfitters! 🏔️ I can check on an order or help you find gear "
     "from our catalog. What can I help with today?"
 )
 FALLBACK_REPLY = (

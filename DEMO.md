@@ -2,10 +2,10 @@
 
 Run top to bottom. Every step lists what to type and what you should see. Total time is about 10 minutes, and each step stands alone, so skip freely.
 
-## 0. Setup check (before the interview)
+## 0. Setup check (before you demo)
 
 ```bash
-cd sierra-outfitters-agent        # the folder the submission zip extracts to (or your clone)
+cd customer-agent                 # the repo root
 conda deactivate 2>/dev/null; source .venv/bin/activate   # prompt shows (.venv), not (base)
 pytest -q                                                 # expect: 187 passed
 rm -rf state/                                             # fresh promo-code store for the demo
@@ -36,7 +36,7 @@ Expect a dim `→ lookup_order({...})` and `← {... "status": "delivered" ...}`
 
 ## 2. Orders: unhappy paths (same session, or restart)
 
-**Error status, missing SKU, handoff.** Type: `can you check W004 for bob.brown@example.com` and then `yes please`
+**Error status, missing SKU, handoff.** Type: `Hi, can you check on my order? bob.brown@example.com, W004` and then `yes please`
 
 Expect an apology first, then the cloak plus "an item (item code SOCH010)" (never an invented name), then a handoff offer. After "yes": `→ escalate_to_human`, and a reply with a real `HT-XXXXXX` ticket ID. **No emojis** on this path. Show the ticket: `tail -1 logs/handoffs.jsonl`. Note `"verified": true`, computed by code.
 
@@ -52,7 +52,7 @@ Expect `→ list_products({})` *before* any question, then Crain's Summit Pro X 
 **Unhappy path: something we don't carry.** Type: `interested in hiking boots`, then `10.5 US`
 Expect "We don't carry hiking boots", with no invented products, no link, no price, no substitute framing, and an honest "no size information" for 10.5.
 
-*Talking point:* open `docs/before_grounding.md`. The same conversation, before grounding, invented three boots, a size, prices and a `sierraoutfitters.com` link. That exhibit drove the supervisor and two regression scenarios.
+*Talking point:* open `docs/before_grounding.md`. The same conversation, before grounding, invented three boots, a size, prices and a `switchbackoutfitters.com` link. That exhibit drove the supervisor and two regression scenarios.
 
 ## 4. Early Risers, with a frozen clock
 
@@ -79,7 +79,7 @@ Expect a mention of Early Risers with its hours (only because they asked about d
 ```bash
 for t in 07:59 08:00 09:59 10:00; do
   printf 'Can I get the Early Risers code? My email is hannah.lewis@example.com\nquit\n' |
-    python -m agent.main --now 2026-11-03T$t | grep -E "Sierra:|EARLYRISER" | tail -2
+    python -m agent.main --now 2026-11-03T$t | grep -E "Switchback:|EARLYRISER" | tail -2
 done
 ```
 Expect no code at 7:59, a code at 8:00 and 9:59, and no code at 10:00.
@@ -100,6 +100,6 @@ python -m tests.scenarios.run_scenarios -k 2 --only promo
 ```
 Expect a per-scenario `PASS 2/2` and a `pass^2` summary. Reliability is reported as a distribution, not one lucky run.
 
-## 7. Where the live extension goes
+## 7. Where the next feature goes
 
 Open `agent/skills/__init__.py`: the enabled-skill list. A new feature (returns, order cancellation, store hours) is one new module in `agent/skills/` plus one line here, plus a scenario. `loop.py` and `prompt.py` don't change.

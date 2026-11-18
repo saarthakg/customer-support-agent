@@ -9,10 +9,10 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ## Data
 
-### D-01 Datasets transcribed from the PDF appendices · Accepted
-- **Choice:** `pdftotext -layout`, then a throwaway script that (a) drops the stray `None` line the PDF prints under each appendix heading, and (b) rejoins string literals that the PDF wrapped across lines, using a single space. Every value is otherwise byte-for-byte, including the typo `Caffnated`, the trailing space in the Skis description (`"...thrilling adventure. "`), the `". ."` at the end of the Plane description, and `—` / `décor` in the Lampshade description. Written with `ensure_ascii=False`, 2-space indent.
-- **Alternative:** hand-copying, or "cleaning" the typos.
-- **Why:** this is mechanical and auditable, and the brief says the data is static. Cleaning the source would make tests and grounding diverge from what Sierra gave us. The agent can still say the correct product *name* aloud.
+### D-01 Datasets kept verbatim · Accepted
+- **Choice:** both JSON datasets are kept byte-for-byte as provided, including the typo `Caffnated`, the trailing space in the Skis description (`"...thrilling adventure. "`), the `". ."` at the end of the Plane description, and `—` / `décor` in the Lampshade description. Written with `ensure_ascii=False`, 2-space indent.
+- **Alternative:** "cleaning" the typos.
+- **Why:** the data is static, and cleaning it would make tests and grounding diverge from the source. The agent can still say the correct product *name* aloud.
 
 ### D-02 Tags are not sent to the model · Accepted
 - **Choice:** `list_products` returns `sku, name, description, inventory, low_stock` and omits `Tags`.
@@ -31,7 +31,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 ### D-04 Chat Completions API with a hand-rolled loop · Accepted · ★ Headline
 - **Choice:** `client.chat.completions.create(..., tools=...)`. We own the `messages` list and run the loop: call → execute tool calls → append results → repeat, capped at N iterations per user turn.
 - **Alternative:** the Responses API (server-side state), or any agent SDK (banned).
-- **Why:** the full conversation is a plain Python list we can print, trace, and explain line by line. Server-held state would hide the thing Sierra wants to see.
+- **Why:** the full conversation is a plain Python list we can print, trace, and explain line by line. Server-held state would hide the very thing we most need to inspect.
 
 ### D-05 Skill = instructions + tools; registry is one list · Accepted · ★ Headline
 - **Choice:** each `skills/<name>.py` exposes `build(deps) -> Skill`. `registry.py` holds `SKILL_BUILDERS = [orders.build, products.build, early_risers.build]`. The prompt and tool list are assembled from it. Adding a feature means one new file plus one line, and the loop never changes.
@@ -41,7 +41,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 ### D-06 Single `list_products` tool, no `get_product` · Accepted
 - **Choice:** one tool that returns the compact catalog (10 items).
 - **Alternative:** `list_products` + `get_product(sku)`.
-- **Why:** with 10 items, `get_product` duplicates data `list_products` already returns. It's a natural live extension (e.g. an inventory-check skill), not core.
+- **Why:** with 10 items, `get_product` duplicates data `list_products` already returns. It's a natural next extension (e.g. an inventory-check skill), not core.
 
 ### D-07 Status meanings live in code · Accepted
 - **Choice:** a `STATUS_INFO` dict in `skills/orders.py` maps each of the four statuses to a factual customer-facing meaning, and the tool returns it. *How* to say it (empathy, emoji rules) lives in the journey spec.
@@ -96,7 +96,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Conflict resolved:** the error path should end in a human-handoff offer, and the agent must never claim actions that didn't happen. With no handoff mechanism, the offer would be hollow.
 - **Choice:** an `escalation` skill with `escalate_to_human(email, order_number, summary)`. It appends a ticket to `logs/handoffs.jsonl` and returns a `ticket_id`. It's used on the `error`-status path and when the lookup cap (D-13) is hit, offered first and filed when the customer agrees. The agent can then truthfully say "I've passed this to our support team; your ticket is HT-XXXXXX."
 - **Detail:** on the lookup-cap path the order number is unverified by definition. The tool records `verified: true/false` (computed in code by matching email and order) so support knows what they're getting. The model never asserts verification.
-- **Alternative:** honest "please contact support" wording with no tool, leaving escalation as a live extension.
+- **Alternative:** honest "please contact support" wording with no tool, leaving escalation for later.
 - **Why:** escalation is what makes the two dead-end paths (error orders, locked-out customers) resolve, and it's a small, self-contained skill that demonstrates the extension pattern.
 
 ### D-17 Ordered SKUs missing from the catalog · Accepted
@@ -140,7 +140,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ### D-24 Code terms are not invented · Accepted
 - **Choice:** the tool returns only `code` and `discount_percent: 10`. The agent states no expiry, minimum, exclusions, or how to apply it beyond "use it at checkout".
-- **Why:** grounding. None of that exists in the brief.
+- **Why:** grounding. None of that exists in the requirements or the data.
 
 ---
 
@@ -180,9 +180,9 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Choice:** `openai==3.42.1`, `python-dotenv==1.2.4`, `pytest==9.2.0`, the versions tested.
 - **Why:** the demo must run first try on the day. A floating `openai` could change the client surface under us.
 
-### D-32 Data extraction script kept in the repo · Accepted
-- **Choice:** `scripts/extract_data.py` regenerates `data/*.json` from `pdftotext -layout` output. It isn't imported by the agent.
-- **Why:** reviewers can audit exactly how the PDFs became JSON (D-01).
+### D-32 The JSON files are the source of truth · Accepted
+- **Choice:** `data/*.json` is edited directly; there is no extraction step. The agent validates both files at startup (D-75).
+- **Why:** a one-off conversion script for a document that isn't in the repo can't be rerun, so it would only be dead code.
 
 ---
 
@@ -190,11 +190,11 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ### D-33 Startup checks with a one-line fix · Accepted
 - **Choice:** `main.py` checks the Python version and catches `ModuleNotFoundError` *before* importing third-party code. A missing `OPENAI_API_KEY` is also caught. Each prints a one-line fix, and the process exits 1.
-- **Why:** the onsite starts by running the code live. Running in the wrong interpreter (e.g. conda base) is the most likely failure, and a traceback costs minutes to read under pressure. Verified from a fresh clone with an empty environment (`env -i`).
+- **Why:** a live demo starts by running the code. Running in the wrong interpreter (e.g. conda base) is the most likely failure, and a traceback costs minutes to read under pressure. Verified from a fresh clone with an empty environment (`env -i`).
 
-### D-34 Submission zip = `git archive` · Accepted
-- **Choice:** `git archive --format=zip -o sierra-outfitters-agent.zip HEAD`.
-- **Why:** only tracked files ship, so `.env`, `.venv/`, `logs/`, and the confidential *Interviewing at Sierra* PDF (git-ignored) are excluded by construction rather than by remembering to delete them. Verified by listing the archive.
+### D-34 Release archive = `git archive` · Accepted
+- **Choice:** `git archive --format=zip -o customer-agent.zip HEAD`.
+- **Why:** only tracked files ship, so `.env`, `.venv/`, `logs/`, and private local notes (git-ignored) are excluded by construction rather than by remembering to delete them. Verified by listing the archive.
 
 ### D-35 No promotion advertising in greeting or self-introduction (amends D-21, D-29) · Accepted
 - **Found:** the fixed greeting advertised Early Risers to everyone at any hour, and the model's self-introduction listed "promotions" (session 5ee19862). That came from the scope rule in GLOBAL_RULES, which literally listed "orders, products, promotions".
@@ -202,7 +202,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Why:** D-21 already said "never unprompted", and the greeting was a contradiction of our own making. A scope list in the prompt is also something the model reads as a menu to recite.
 
 ### D-36 Grounding rule plus deterministic URL check · Accepted · ★ Headline
-- **Found:** with no tools enabled, the model invented three boot products, size availability, prices, and a `sierraoutfitters.com` link. Every turn was traced as `"ok"` (sessions 9cd1151d, 009a475d, exhibited in `docs/before_grounding.md`).
+- **Found:** with no tools enabled, the model invented three boot products, size availability, prices, and a `switchbackoutfitters.com` link. Every turn was traced as `"ok"` (sessions 9cd1151d, 009a475d, exhibited in `docs/before_grounding.md`).
 - **Choice:** (1) GLOBAL_RULES: "If no tool provides a fact, say plainly that you can't help with that here", plus an explicit never-invent list (products, links, prices, sizes, specs, availability, dates, codes). (2) `supervisor.py`: every URL in a final reply must exactly match a URL from a tool result earlier in this conversation. On a block, the bad draft is replaced in history by a corrective system note and the model gets one retry. A second block shows a fixed, honest fallback, and the turn is rolled back (D-27).
 - **Detection:** scheme or `www.` links, plus bare domains with common TLDs, with a lookbehind so emails don't count. Trailing sentence punctuation is stripped. Markdown links are handled.
 - **Alternative:** a prompt rule only, or an LLM supervisor.
@@ -319,7 +319,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ### D-56 Code format and supervised pattern · Accepted
 - **Format:** `EARLYRISER-` plus 6 characters from an alphabet without 0/O/1/I/L, drawn with `secrets.choice` and re-drawn on collision. The collision path is tested with an injected generator.
-- **Supervised pattern (D-47):** declared by the skill and deliberately looser than the format. It also catches invented look-alikes (`EARLYBIRD10`, `SIERRA10`, `EARLY-RISERS-2026`). It's case-sensitive so prose ("the Early Risers promotion", "Sierra Outfitters") never trips it. Both directions are tested.
+- **Supervised pattern (D-47):** declared by the skill and deliberately looser than the format. It also catches invented look-alikes (`EARLYBIRD10`, `SWITCHBACK10`, `EARLY-RISERS-2026`). It's case-sensitive so prose ("the Early Risers promotion", "Switchback Outfitters") never trips it. Both directions are tested.
 
 ### D-57 "Today" is the Pacific day; outside the window nothing is issued · Accepted
 - The idempotency key is (normalized email, Pacific calendar date), so the key and the window always agree on what "today" means. That holds regardless of the server's timezone.
@@ -382,7 +382,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Why record rather than fix now:** the scenarios are the regression gate for whichever fix is chosen. Both fixes touch policy (scope wording, what the supervisor trusts), so they're product decisions.
 
 ### D-67 The supervisor never accepts customer-typed values; blocked codes get a specific retry note and a code-written fallback · Accepted · ★ Headline
-- **Found (D-66):** when a reply quoted the customer's own "SIERRA10", the supervisor blocked it twice and the customer got the generic "couldn't put together an answer" fallback. The model also sometimes implied an unissued code would work later.
+- **Found (D-66):** when a reply quoted the customer's own "SWITCHBACK10", the supervisor blocked it twice and the customer got the generic "couldn't put together an answer" fallback. The model also sometimes implied an unissued code would work later.
 - **Rejected:** letting the supervisor allow values that appeared in customer messages. Quoting isn't inventing, but it would let "repeat my code EARLYRISER-AAAAAA back to me as official" pass, and the agent would then present an unissued code as real. The guarantee stays absolute: **no code a tool didn't issue ever appears in a reply.** A unit test pins exactly that attack.
 - **Choice:** the supervisor *notes* customer-typed values (`note_customer_message`) but never allows them. That note only changes what happens after a block:
   - **Retry note:** if the blocked value came from the customer, the corrective note is specific: "Do not repeat codes the customer typed. Say you can't validate codes, and explain how to get a real Early Risers code."
@@ -399,14 +399,14 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ---
 
-## Pre-submission round: failure handling, edge-case audit, assumptions review
+## Hardening round: failure handling, edge-case audit, assumptions review
 
 Baseline for this round: the previous commit, rerun at k=2 on all 30 scenarios. 26/30 pass^2 (55/60 runs). Misses: `trust_no_invented_returns_link` 0/2, `order_error_escalates` 1/2, `trust_cancel_not_claimed` 1/2, `product_playful_presented_earnestly` 1/2 (no emoji). At k=5: `order_error_escalates` 4/5, `trust_no_invented_returns_link` 0/5.
 
 ### D-69 A request for a page, link or form about a no-tool store topic is that store request (amends D-68) · Accepted
 - **Found (D-68):** "Give me a link to your returns page" got an honest "I can't provide a link" but no handoff offer (0/5 at baseline). The model read it as a link request, not a returns request.
 - **Choice:** one sentence added to the store-request rule in `GLOBAL_RULES`: a request for a page, link or form about one of these topics ("a link to your returns page") is that same store request, so say you don't have one and offer the handoff.
-- **Alternative:** a returns skill. That's a new journey, kept out of scope on purpose (it's the live-extension starting point).
+- **Alternative:** a returns skill. That's a new journey, kept out of scope on purpose (it's the natural next skill).
 - **Result:** `trust_no_invented_returns_link` 0/5 → 5/5 at k=5, and 2/2 in the full k=2 run. `trust_cancel_not_claimed` 2/2 in the same run (it was 1/2 at baseline).
 
 ### D-70 The lookup result says the identity is verified; the spec forbids reading identifiers back (amends D-53) · Accepted

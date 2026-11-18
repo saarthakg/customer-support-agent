@@ -1,8 +1,8 @@
 # Exhibit: before grounding
 
-Two live sessions from early development (`logs/trace.jsonl`, 2026-11-02), exported verbatim. The agent had **no tools enabled**, so it had no catalog at all, only the voice and rules prompt. The catalog has no boots.
+Two live sessions from early development (`logs/trace.jsonl`, 2026-11-02), exported verbatim apart from the store name, which was changed later. The agent had **no tools enabled**, so it had no catalog at all, only the voice and rules prompt. The catalog has no boots.
 
-They're kept as a walkthrough exhibit because they show why grounding and supervision live in code: a fluent model with nothing to ground on confidently makes things up, and the trace marked every one of these turns `outcome: "ok"`.
+They're kept as an exhibit because they show why grounding and supervision live in code: a fluent model with nothing to ground on confidently makes things up, and the trace marked every one of these turns `outcome: "ok"`.
 
 ## Session 9cd1151d: invented URL
 
@@ -25,13 +25,13 @@ They're kept as a walkthrough exhibit because they show why grounding and superv
 **Customer:** yes
 
 **Agent:** Here’s a link to our hiking boots collection where you can explore different styles and find your perfect fit:  
-https://www.sierraoutfitters.com/hiking-boots  
+https://www.switchbackoutfitters.com/hiking-boots  
 Onward into the unknown! Let me know if you want help narrowing down choices.
 
 **What went wrong**
 - Four turns of clarifying questions (category, type, brand/size/features) before any answer.
 - Turn 4 claims "a solid pick" that doesn't exist.
-- Turn 5 invents `https://www.sierraoutfitters.com/hiking-boots`. No tool returned it, and the domain isn't ours to promise.
+- Turn 5 invents `https://www.switchbackoutfitters.com/hiking-boots`. No tool returned it, and the domain isn't ours to promise.
 
 ## Session 009a475d: invented products
 
@@ -50,13 +50,13 @@ Onward into the unknown! Let me know if you want help narrowing down choices.
 **Customer:** 10.5 US
 
 **Agent:** Thanks! Here are some men’s waterproof hiking boots available in size 10.5 US:  
-- Sierra Trail Waterproof Boots  
+- Switchback Trail Waterproof Boots  
 - Mountain Ridge GTX Boots  
 - Cascade Peak Waterproof Hikers  
 Would you like details or prices on any of these? Onward into the unknown! 🌲
 
 **What went wrong**
-- Three invented products: "Sierra Trail Waterproof Boots", "Mountain Ridge GTX Boots", "Cascade Peak Waterproof Hikers".
+- Three invented products: "Switchback Trail Waterproof Boots", "Mountain Ridge GTX Boots", "Cascade Peak Waterproof Hikers".
 - It claims stock "in size 10.5 US". The catalog has no sizes.
 - It offers prices. The catalog has no prices.
 - Three clarifying questions before an (invented) answer.

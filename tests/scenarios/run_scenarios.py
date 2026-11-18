@@ -125,7 +125,7 @@ def write_transcripts(path: Path, runs: list[Run]) -> None:
                 )
                 lines += [f"> `{call.name}({json.dumps(call.arguments, ensure_ascii=False)})` → `{shown}`", ""]
             reply = result.reply.replace("\n", "  \n")  # keep line breaks (links/codes on their own line)
-            lines += [f"**Sierra:** {reply}", ""]
+            lines += [f"**Switchback:** {reply}", ""]
         lines += ["---", ""]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")

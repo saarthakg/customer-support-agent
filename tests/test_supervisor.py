@@ -9,9 +9,9 @@ TRACKING_URL = "https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK12345678
 @pytest.mark.parametrize(
     "text, expected",
     [
-        ("Shop here: https://www.sierraoutfitters.com/hiking-boots", {"https://www.sierraoutfitters.com/hiking-boots"}),
-        ("see www.sierraoutfitters.com.", {"www.sierraoutfitters.com"}),
-        ("visit sierraoutfitters.com/boots!", {"sierraoutfitters.com/boots"}),
+        ("Shop here: https://www.switchbackoutfitters.com/hiking-boots", {"https://www.switchbackoutfitters.com/hiking-boots"}),
+        ("see www.switchbackoutfitters.com.", {"www.switchbackoutfitters.com"}),
+        ("visit switchbackoutfitters.com/boots!", {"switchbackoutfitters.com/boots"}),
         (f"Track it: [here]({TRACKING_URL}).", {TRACKING_URL}),
         (f"Track it:\n{TRACKING_URL}", {TRACKING_URL}),
         ("I have john.doe@example.com on file", set()),  # emails are not links
@@ -25,9 +25,9 @@ def test_url_detection(text, expected):
 
 def test_blocks_url_no_tool_returned():
     # The real failure from session 9cd1151d (docs/before_grounding.md).
-    verdict = Supervisor().check("Explore here:\n\nhttps://www.sierraoutfitters.com/hiking-boots\n\nOnward!")
+    verdict = Supervisor().check("Explore here:\n\nhttps://www.switchbackoutfitters.com/hiking-boots\n\nOnward!")
     assert not verdict.ok
-    assert verdict.labels() == ["blocked_url: https://www.sierraoutfitters.com/hiking-boots"]
+    assert verdict.labels() == ["blocked_url: https://www.switchbackoutfitters.com/hiking-boots"]
 
 
 def test_allows_url_a_tool_returned_even_in_a_later_turn():
@@ -49,8 +49,8 @@ def test_plain_reply_passes():
 
 
 def test_correction_names_the_blocked_value():
-    verdict = Supervisor().check("go to sierraoutfitters.com")
-    assert "sierraoutfitters.com" in Supervisor().correction(verdict)
+    verdict = Supervisor().check("go to switchbackoutfitters.com")
+    assert "switchbackoutfitters.com" in Supervisor().correction(verdict)
 
 
 # --- ticket IDs (declared by the escalation skill) ---
@@ -92,8 +92,8 @@ def test_customer_typed_code_is_still_blocked():
 
 def test_correction_is_specific_when_the_blocked_code_came_from_the_customer():
     sup = Supervisor(CODE_RULES)
-    sup.note_customer_message("Is SIERRA10 a valid code?")
-    note = sup.correction(sup.check("Yes, SIERRA10 works!"))
+    sup.note_customer_message("Is SWITCHBACK10 a valid code?")
+    note = sup.correction(sup.check("Yes, SWITCHBACK10 works!"))
     assert "Do not repeat codes the customer typed" in note
     assert "explain how to get a real Early Risers code" in note
 
@@ -106,6 +106,6 @@ def test_correction_is_generic_when_the_model_invented_the_code():
 
 def test_fallback_is_specific_to_the_blocked_kind():
     sup = Supervisor(CODE_RULES)
-    assert sup.fallback(sup.check("Use SIERRA10")) == CODE_GUARD.fallback
+    assert sup.fallback(sup.check("Use SWITCHBACK10")) == CODE_GUARD.fallback
     assert "Only codes I issue in this chat are valid" in CODE_GUARD.fallback
-    assert sup.fallback(sup.check("See sierraoutfitters.com/returns")) is None  # URLs keep the generic fallback
+    assert sup.fallback(sup.check("See switchbackoutfitters.com/returns")) is None  # URLs keep the generic fallback

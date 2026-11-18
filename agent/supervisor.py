@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 
 # Anything a customer could treat as a link: a scheme or "www.", or a bare domain
-# with a common TLD ("sierraoutfitters.com/boots"). The lookbehind stops email
+# with a common TLD ("switchbackoutfitters.com/boots"). The lookbehind stops email
 # addresses (john.doe@example.com) from matching as domains.
 _URL_CHARS = r"[^\s<>()\[\]\"'`]"
 URL_PATTERN = re.compile(
@@ -53,7 +53,7 @@ def find_all(pattern: re.Pattern[str], text: str) -> set[str]:
 
 @dataclass(frozen=True)
 class Verdict:
-    violations: list[tuple[str, str]]  # (kind, value), e.g. ("blocked_url", "https://www.sierraoutfitters.com")
+    violations: list[tuple[str, str]]  # (kind, value), e.g. ("blocked_url", "https://www.switchbackoutfitters.com")
 
     @property
     def ok(self) -> bool:

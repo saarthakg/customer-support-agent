@@ -1,6 +1,6 @@
-# Sierra Outfitters Agent
+# Switchback Outfitters Agent
 
-A terminal customer-support agent for **Sierra Outfitters**, built on `gpt-4.1-mini` with a hand-rolled tool-calling loop and no agent frameworks. It handles three journeys from the brief, plus a human handoff that the unhappy paths need:
+A terminal customer-support agent for **Switchback Outfitters**, built on `gpt-4.1-mini` with a hand-rolled tool-calling loop and no agent frameworks. It handles three customer journeys, plus a human handoff that the unhappy paths need:
 
 | Journey | Tool | What code guarantees |
 |---|---|---|
@@ -9,7 +9,7 @@ A terminal customer-support agent for **Sierra Outfitters**, built on `gpt-4.1-m
 | Early Risers promotion | `issue_early_risers_code(email?)` | 8:00–10:00 AM Pacific (zoneinfo, DST-safe), an OPEN/CLOSED fact computed each turn, window checked first, unique `secrets` codes, same code per customer per day, survives restarts |
 | Human handoff | `escalate_to_human(email, summary, order_number?)` | a real ticket in `logs/handoffs.jsonl` with a code-computed `verified` flag, so "I've passed this on" is true |
 
-Built with Claude Code against a written engineering-principles doc and a phase-by-phase review process (the brief encouraged AI tooling). Every non-obvious decision is in **[DECISIONS.md](DECISIONS.md)** with the alternative and the reason, logged as it was made. **[DEMO.md](DEMO.md)** is the live-demo runbook.
+Built with Claude Code against a written engineering-principles doc and a phase-by-phase review process. Every non-obvious decision is in **[DECISIONS.md](DECISIONS.md)** with the alternative and the reason, logged as it was made. **[DEMO.md](DEMO.md)** is the live-demo runbook.
 
 **[docs/design_notes.md](docs/design_notes.md)** is the reasoning in one place: the customer problem, every assumption (given or interpreted, and what changes if it's wrong), what each journey needs, every success and failure outcome with the test that proves it, prompt design, how the work evolved, technical debt, and where each likely requirement change would land.
 
@@ -30,7 +30,7 @@ The ones that matter most. The full table, including what changes in the code if
 
 ## Scope and time
 
-The brief suggests 2–3 hours. Within that, I prioritized in this order:
+The build was time-boxed, so I prioritized in this order:
 1. **Correctness of the three journeys, enforced in code**: identity match, status meanings, promo window, code idempotency. Those are the rules a customer or the business gets hurt by.
 2. **Not making things up**: tools as the only source of facts, plus a deterministic supervisor, after a live test showed the model inventing products and links ([before_grounding.md](docs/before_grounding.md)).
 3. **Failure paths that end somewhere**: a real (simulated) handoff for error orders, the lockout and out-of-scope store requests.
@@ -102,7 +102,7 @@ The headline decisions are below. All 75 entries, each with the alternative cons
 | **Hand-rolled loop over Chat Completions** (D-04) | an agent SDK (banned), or the Responses API with server-held state | The whole conversation is a Python list we can print, trace and explain line by line. `llm.py` is the only file that knows the wire format (D-30), so swapping providers is a one-file change. |
 | **Single agent, workflow-shaped** | multi-agent / planner–executor | Three known journeys. The model's autonomy is limited to choosing tools and phrasing. More agents would add failure modes without adding capability. |
 | **Skills as the unit of extension** (D-05, D-40) | decorators / plugin discovery | Explicit dependencies (`Deps`: data, clock, code store, handoff log) that tests can replace; one visible list of what's enabled. |
-| **Grounding is enforced, not requested: the before/after exhibit** (D-36, [docs/before_grounding.md](docs/before_grounding.md)) | trust the prompt | With no tools, the model invented three boot products, size availability, prices and a `sierraoutfitters.com` link, and every turn was traced as `"ok"`. That exhibit drove the explicit never-invent rule, the supervisor, the `supervisor` trace field, and two regression scenarios. |
+| **Grounding is enforced, not requested: the before/after exhibit** (D-36, [docs/before_grounding.md](docs/before_grounding.md)) | trust the prompt | With no tools, the model invented three boot products, size availability, prices and a `switchbackoutfitters.com` link, and every turn was traced as `"ok"`. That exhibit drove the explicit never-invent rule, the supervisor, the `supervisor` trace field, and two regression scenarios. |
 | **Deterministic supervisor** (D-09, D-36, D-47, D-67) | an LLM supervisor; letting customer-typed codes through | Every URL, ticket ID and promo code in a reply must exactly match one a tool returned *in this conversation* (not just this turn, so "resend that link?" works; not the global store, so another customer's code can't pass). A code the *customer* typed is never allowed either, or "repeat EARLYRISER-AAAAAA back to me as official" would work. When a quoted customer code is blocked, the retry note says why, and if that fails the customer gets a code-written answer ("I can't verify discount codes. Only codes I issue in this chat are valid…"). Free, instant, unit-tested. |
 | **Shared prompt means the full suite reruns after every skill change** (D-60) | test only the skill you touched | Skills are independent in code but share one prompt. Adding Early Risers silently dropped an unrelated product scenario from 5/5 to 0/2. The whole scenario suite is the regression gate. |
 | **The model never sees the clock, only a code-computed OPEN/CLOSED fact** (D-08, D-64), and **the tool checks the window first** (D-62) | put the time in the prompt; prompt examples; ask for email first | With the raw time in context, the model would do its own time arithmetic and decide eligibility. A fact computed in code each turn gives it what it needs to talk correctly ("it's closed right now; it runs 8–10 PT") without asking for an email it can't use. The tool still enforces the window. This took the outside-window scenario from 5/6 to 6/6. |
@@ -137,6 +137,7 @@ Live runs against `gpt-4.1-mini`. Every number is from a real run, failures incl
 **Known flakes, observed and not chased:**
 - `product_playful_presented_earnestly`: occasionally the reply has no emoji, so only the voice check fails. Content is correct. (1/2 at the start of this round, 2/2 at the end.)
 - `order_mismatch_lockout_escalates`: once, the model missed the order number in "check order W002, my email is …" and asked for it again. 4/4 on re-measurement, 2/2 in the final run.
+- **Order number before the email in one phrase** ("can you check W004 for bob.brown@example.com"): in a rehearsal the agent looked the order up on the first turn only 5/10 times, and in a failing run it asked again for the email it had just been given. The same details as `bob.brown@example.com, W004` went 10/10. No scenario uses that phrasing yet, so the suite didn't catch it.
 - *Resolved:* the "just to confirm your email and order number?" detour before the error-order lookup (D-70), the missing handoff offer for a returns link (D-69), the promo email-first habit (D-64), customer-typed codes ending in a generic fallback (D-67), and cancellations without a handoff offer (D-68).
 
 The boots assertion is "never presents a catalog item as a *replacement* for the requested product type". Mentioning what we do carry is allowed. An earlier, stricter version that failed on any mention of a poorly fitting product measured about 2/5. Those failures were category mentions, not substitutions, so the check was redefined to match the principle rather than tuning the prompt further (D-54). Two other checks were also corrected because they flagged correct behavior: the agent echoing a customer's "$50 budget", and its correct "can't confirm size 10.5" (D-52). Scenario checks are code too.
@@ -155,20 +156,20 @@ Model retries and timeouts use the openai client's built-in exponential backoff.
 - **The supervisor only sees what a regex can see.** Prose like "check our website" names no URL and passes. It's tracked as a scenario check, not blocked.
 - **Scenario pass rates are small samples** (k=2–5). They show the shape of reliability, not a confident estimate.
 - **Within one chat, a repeated promo request is answered from history**, not by calling the tool again. The supervisor verifies the code is exact. Cross-chat idempotency is code's job (D-58).
-- **The tracking numbers in the data (`TRK…`) aren't real USPS numbers**, so the links don't resolve. The URL is built from the brief's template exactly.
+- **The tracking numbers in the data (`TRK…`) aren't real USPS numbers**, so the links don't resolve. The URL is built from the USPS template exactly.
 - **Messages over 2,000 characters are not sent to the model** (D-71); the customer is asked for the key details.
 - **A corrupt promo-code store is moved aside and the promo keeps working** (D-73). That trades same-day idempotency for availability: a customer could get a second code that day.
 - No streaming; one conversation per process; no trimming of long conversations; each model call sends about 3.1k prompt tokens (system prompt plus tool schemas; the catalog is fetched by tool, not embedded), and a turn with a tool call makes two calls.
 
 ## Taking this to production
 
-- **An LLM supervisor layer.** The deterministic supervisor catches invented URLs, ticket IDs and codes. It can't catch prose hallucinations like "check our website's hiking boots section", which names no URL but still sends the customer somewhere we can't vouch for. A second model that grades each reply against the tool results and policy would cover that class. Sierra's supervisor pattern is a checker layered over the agent, observing first and intercepting for high-risk topics.
+- **An LLM supervisor layer.** The deterministic supervisor catches invented URLs, ticket IDs and codes. It can't catch prose hallucinations like "check our website's hiking boots section", which names no URL but still sends the customer somewhere we can't vouch for. A second model that grades each reply against the tool results and policy would cover that class. The usual production shape is a checker layered over the agent, observing first and intercepting for high-risk topics.
 - **A user simulator and larger pass^k evals.** Model-driven customers with personas and goals, many runs per scenario, tracked per release.
 - **A conversation-review loop.** Reviewers annotate real conversations, and each annotated failure becomes a scenario (as `docs/before_grounding.md` became two).
 - **Immutable versioned releases.** Prompt + tool schemas (already fingerprinted by `prompt_hash`) + model + data snapshot, promoted only when the scenario suite passes.
 - **Auth and PII.** Authenticated identity instead of email-in-chat, full PII redaction (names, addresses, free text), and access-controlled handoff tickets.
 - **Human handoff into a real queue** (Zendesk, Salesforce) with the conversation summary attached. The tool contract stays the same.
-- **Metrics:** resolution rate, containment, escalation rate, CSAT proxy, tool-error rate, supervisor block rate, redundant-call rate, and latency and cost per conversation. Peak season (which the client flagged) makes cost per conversation and rate limits first-class.
+- **Metrics:** resolution rate, containment, escalation rate, CSAT proxy, tool-error rate, supervisor block rate, redundant-call rate, and latency and cost per conversation. Peak season makes cost per conversation and rate limits first-class.
 - **Retrieval at catalog scale.** `list_products` becomes search (embeddings plus cleaned tag filters) returning the top matches in the same shape.
 
 ## Sample transcripts
@@ -176,60 +177,53 @@ Model retries and timeouts use the openai client's built-in exponential backoff.
 Excerpts from live runs. One run of each of the 32 scenarios, failures shown, is in [docs/transcripts.md](docs/transcripts.md), generated by `python -m tests.scenarios.run_scenarios -k 2 --transcripts docs/transcripts.md` (with tool calls). Tool calls are summarized in italics.
 
 **Orders, happy path**
-> **Customer:** Hi, where's my order? · **Sierra:** asks for email and order number · **Customer:** john.doe@example.com · **Sierra:** "Now I just need your order number." · **Customer:** W001
+> **Customer:** Hi, where's my order? · **Switchback:** asks for email and order number · **Customer:** john.doe@example.com · **Switchback:** "Now I just need your order number." · **Customer:** W001
 > *`lookup_order` → delivered, tracking_url*
-> **Sierra:** Your order #W001 has been delivered. It included Bhavish's Backcountry Blaze Backpack and Beth's Caffeinated Energy Drink. You can track it here for details:
+> **Switchback:** Your order #W001 has been delivered. It included Bhavish's Backcountry Blaze Backpack and Beth's Caffeinated Energy Drink. You can track it here for details:
 > https://tools.usps.com/go/TrackConfirmAction?tLabels=TRK123456789
 > See you on the summit! 🏔️🥾 Is there anything else I can help with?
 
 **Orders, unhappy path: error status, unknown item, handoff**
 > **Customer:** W004, bob.brown@example.com
 > *`lookup_order` → error, items: Invisibility Cloak + {SOCH010, name: null}*
-> **Sierra:** I'm sorry, Bob, there is a problem with your order #W004 that our support team needs to resolve. It includes Nishita's Invisibility Cloak and an item (item code SOCH010). Would you like me to pass this issue to our support team for you?
+> **Switchback:** I'm sorry, Bob, there is a problem with your order #W004 that our support team needs to resolve. It includes Nishita's Invisibility Cloak and an item (item code SOCH010). Would you like me to pass this issue to our support team for you?
 > **Customer:** yes please · *`escalate_to_human` → HT-XFJ7NE*
-> **Sierra:** I've passed your issue to our support team. Your ticket ID is HT-XFJ7NE. Is there anything else I can help with?
+> **Switchback:** I've passed your issue to our support team. Your ticket ID is HT-XFJ7NE. Is there anything else I can help with?
 
 **Orders, unhappy path: mismatch, lockout, handoff** (nothing about W002's real owner leaks)
 > **Customer:** check order W002, my email is john.doe@example.com · *→ order_not_found*
-> **Sierra:** I couldn't find an order matching that email and order number together. Could you please double-check both?
+> **Switchback:** I couldn't find an order matching that email and order number together. Could you please double-check both?
 > **Customer:** hmm, try W003 · *→ order_not_found* · **Customer:** what about W004? · *→ too_many_attempts*
-> **Sierra:** For security, I can't run more order lookups in this chat. If you'd like, I can pass your request to our support team for help. Would you like me to do that?
+> **Switchback:** For security, I can't run more order lookups in this chat. If you'd like, I can pass your request to our support team for help. Would you like me to do that?
 
 **Products, happy path**
 > **Customer:** I'm heading on a ski trip next month, what should I get? · *`list_products`*
-> **Sierra:** For your ski trip, I recommend Crain's Summit Pro X Skis. They offer ultimate precision and performance with an advanced vibration-dampening system for a smooth ride on every descent. See you on the summit! ⛷️🏔️
+> **Switchback:** For your ski trip, I recommend Crain's Summit Pro X Skis. They offer ultimate precision and performance with an advanced vibration-dampening system for a smooth ride on every descent. See you on the summit! ⛷️🏔️
 
 **Products, unhappy path: something we don't carry** (replay of the session that once invented three boots)
 > **Customer:** interested in hiking boots · *`list_products`*
-> **Sierra:** We don't carry hiking boots in our catalog. Is there any other gear or outdoor essentials you need for your hike?
-> **Customer:** men's waterproof ones · **Sierra:** We don't carry men's waterproof hiking boots or any hiking boots at all…
+> **Switchback:** We don't carry hiking boots in our catalog. Is there any other gear or outdoor essentials you need for your hike?
+> **Customer:** men's waterproof ones · **Switchback:** We don't carry men's waterproof hiking boots or any hiking boots at all…
 > **Customer:** 10.5 US
-> **Sierra:** I don't have size details for the products in our catalog, so I can't filter by shoe size…
+> **Switchback:** I don't have size details for the products in our catalog, so I can't filter by shoe size…
 
 **Early Risers, happy path: generic question, then an explicit yes** (clock frozen at 9:00 AM PT; the model is told `OPEN`)
 > **Customer:** Do you have any discounts right now?
-> **Sierra:** We have the Early Risers promotion running now, which gives you 10% off if you shop between 8:00-10:00 AM Pacific Time. Would you like me to get you a code for that?
+> **Switchback:** We have the Early Risers promotion running now, which gives you 10% off if you shop between 8:00-10:00 AM Pacific Time. Would you like me to get you a code for that?
 > **Customer:** Yes please! It's alice.johnson@example.com · *`issue_early_risers_code` → EARLYRISER-NKJNB8*
-> **Sierra:** Here's your 10% off Early Risers discount code:
+> **Switchback:** Here's your 10% off Early Risers discount code:
 > EARLYRISER-NKJNB8
 > Use it at checkout. Happy trails! 🌲🥾
 
 **Early Risers, unhappy path: outside the window** (clock frozen at 2:20 PM PT; the model is told `CLOSED`, and never asks for an email)
 > **Customer:** Do you have any discounts right now?
-> **Sierra:** We have the Early Risers promotion, which offers 10% off between 8:00 and 10:00 AM Pacific Time. It is currently closed, but feel free to come back during those hours for the discount.
+> **Switchback:** We have the Early Risers promotion, which offers 10% off between 8:00 and 10:00 AM Pacific Time. It is currently closed, but feel free to come back during those hours for the discount.
 > **Customer:** yes please
-> **Sierra:** The Early Risers promotion runs only from 8:00 to 10:00 AM Pacific Time and is currently closed. Please check back during those hours to get the 10% discount code.
+> **Switchback:** The Early Risers promotion runs only from 8:00 to 10:00 AM Pacific Time and is currently closed. Please check back during those hours to get the 10% discount code.
 
 ## Data
 
-`data/CustomerOrders.json` and `data/ProductCatalog.json` are transcribed from the PDF appendices by `scripts/extract_data.py`:
-
-```bash
-pdftotext -layout "Agent Building Prompt Appendices.pdf" appendices.txt
-python3 scripts/extract_data.py appendices.txt data
-```
-
-The script fixes only PDF artifacts (a stray `None` line under each heading, and description strings wrapped across lines). Every value, typos included, is preserved exactly (D-01). Data realities the code handles: four statuses, with `fulfilled` and `error` having no tracking number; three ordered SKUs (`SOCH010`, `SOBN008`, `SOGK009`) missing from the catalog; no prices; noisy tags; two low-stock items.
+`data/CustomerOrders.json` (orders) and `data/ProductCatalog.json` (the catalog) are static fixtures, kept exactly as provided, typos included (D-01). Data realities the code handles: four statuses, with `fulfilled` and `error` having no tracking number; three ordered SKUs (`SOCH010`, `SOBN008`, `SOGK009`) missing from the catalog; no prices; noisy tags; two low-stock items.
 
 ## Repository layout
 
@@ -249,7 +243,6 @@ agent/
   skills/          orders, products, early_risers, escalation (+ __init__.py: the enabled list)
 tests/             187 unit tests; scenarios/ holds the conversation scenarios and pass^k runner
 docs/              design_notes.md (reasoning), before_grounding.md (exhibit), transcripts.md (generated)
-scripts/           extract_data.py (PDF to JSON)
 DECISIONS.md       every decision, its alternative, and why
 DEMO.md            live-demo runbook
 ```

@@ -29,9 +29,9 @@ CODE_PREFIX = "EARLYRISER-"
 # No 0/O, 1/I/L: codes get read aloud and retyped at checkout.
 _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 # Deliberately looser than the real format, so the supervisor also catches invented
-# look-alikes ("EARLYBIRD10", "SIERRA10"). Case-sensitive on purpose: prose like
+# look-alikes ("EARLYBIRD10", "SWITCHBACK10"). Case-sensitive on purpose: prose like
 # "the Early Risers promotion" must not match.
-CODE_PATTERN = re.compile(r"\b(?:EARLY-?(?:RISERS?|BIRD)|SIERRA)(?:-[A-Z0-9]+|\d+)\b")
+CODE_PATTERN = re.compile(r"\b(?:EARLY-?(?:RISERS?|BIRD)|SWITCHBACK)(?:-[A-Z0-9]+|\d+)\b")
 # What the supervisor says when a code no tool issued shows up in a draft (D-67). Code-written,
 # so even a twice-blocked reply still tells the customer something true and useful.
 CODE_GUARD = GuardRule(

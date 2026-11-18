@@ -1,4 +1,4 @@
-"""Terminal chat for the Sierra Outfitters agent.
+"""Terminal chat for the Switchback Outfitters agent.
 
     python -m agent.main                          # chat
     python -m agent.main --debug                  # also show tool calls, tokens and latency inline
@@ -38,7 +38,7 @@ EXIT_WORDS = {"exit", "quit", "bye"}
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sierra Outfitters support agent")
+    parser = argparse.ArgumentParser(description="Switchback Outfitters support agent")
     parser.add_argument("--debug", action="store_true", help="show tool calls, tokens and latency inline")
     parser.add_argument(
         "--now", type=parse_now, metavar="ISO_TIME",
@@ -78,7 +78,7 @@ def main() -> int:
     if args.now:
         # Always shown, not just in --debug: a demo with a faked clock should say so.
         print(f"{DIM}[clock frozen at {args.now.astimezone(PACIFIC):%Y-%m-%d %I:%M %p} Pacific]{RESET}")
-    print(f"\nSierra: {agent.greet()}\n")
+    print(f"\nSwitchback: {agent.greet()}\n")
 
     try:
         while True:
@@ -94,7 +94,7 @@ def main() -> int:
             result = agent.respond(user_text)
             if args.debug:
                 _print_turn_stats(result)
-            print(f"\nSierra: {result.reply}\n")
+            print(f"\nSwitchback: {result.reply}\n")
     except KeyboardInterrupt:  # Ctrl-C while the agent is answering: exit like Ctrl-D, no traceback
         print()
 

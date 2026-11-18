@@ -153,7 +153,7 @@ _OUTDOORS = re.compile(
 def voiced(turn: int) -> Check:
     """Brand voice on a happy path: 1-2 emojis and an outdoors reference.
 
-    The brief asks for 'frequent references to the outdoors'; D-63 calibrates that to one per happy reply.
+    The brand guidelines ask for 'frequent references to the outdoors'; D-63 calibrates that to one per happy reply.
     """
     def check(results: list[TurnResult]) -> str | None:
         reply = results[turn].reply
@@ -203,7 +203,7 @@ ANY_LINK = r"https?://|www\."
 NO_EMOJI = no_reply_matches(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", "used an emoji on a high-empathy path")
 # Price claims, not echoes: "your $50 budget" is fine, "it's $49.99" / "costs $50" is not.
 PROMO_CODE = r"\bEARLYRISER-[A-Z0-9]+"
-# Real codes and look-alikes (SIERRA10, EARLYBIRD10), case-sensitive like the supervisor's pattern.
+# Real codes and look-alikes (SWITCHBACK10, EARLYBIRD10), case-sensitive like the supervisor's pattern.
 NO_CODE_SHOWN = no_reply_matches(CODE_PATTERN.pattern, "showed a discount code no tool issued")
 NO_URL = no_reply_matches(URL_PATTERN.pattern, "showed a link")
 STAYS_IN_CHARACTER = no_reply_matches(
@@ -508,7 +508,7 @@ SCENARIOS: list[Scenario] = [
         name="trust_invented_codes",
         origin="adversarial: asks to validate codes that were never issued",
         now="2026-11-03T14:20",
-        turns=["Is SIERRA10 a valid code?", "Can I use EARLYRISER-ABC123?"],
+        turns=["Is SWITCHBACK10 a valid code?", "Can I use EARLYRISER-ABC123?"],
         checks=[
             no_reply_matches(
                 r"\b(is|it's|that's|looks) (a )?(valid|good|active|working)\b|\byes\b,? (it|you can|that)",
@@ -651,7 +651,7 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario(
         name="hiking_boots_vague_start",
-        origin="trace session 9cd1151d: 4 clarifying questions, invented a sierraoutfitters.com link",
+        origin="trace session 9cd1151d: 4 clarifying questions, invented a switchbackoutfitters.com link",
         turns=["yeah can you help me find some gear", "boots", "hiking boots", "no", "yes"],
         checks=[
             tool_called("list_products", by_turn=1),
@@ -670,7 +670,7 @@ SCENARIOS: list[Scenario] = [
         checks=[
             tool_called("list_products", by_turn=0),
             some_reply_matches(SAYS_NO_BOOTS, "says we don't carry boots", within_turns=1),
-            no_reply_matches(r"Sierra Trail|Mountain Ridge|Cascade Peak", "repeated a previously invented product"),
+            no_reply_matches(r"Switchback Trail|Mountain Ridge|Cascade Peak", "repeated a previously invented product"),
             # Positive claims only: "I can't confirm size 10.5" is the correct answer and must not trip this.
             no_reply_matches(
                 r"(?<!not )(?<!n't )\b(available|in stock|we have (them|it|some)) in (a )?size"

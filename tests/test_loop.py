@@ -135,7 +135,7 @@ def test_greeting_does_not_advertise_promotions():
 
 # --- supervisor integration (D-09, D-36) ---
 
-BAD_LINK = "Browse here: https://www.sierraoutfitters.com/hiking-boots"
+BAD_LINK = "Browse here: https://www.switchbackoutfitters.com/hiking-boots"
 
 
 def test_supervisor_passes_clean_reply():
@@ -152,15 +152,15 @@ def test_supervisor_retries_once_with_correction_then_passes():
     assert result.reply == "I can't share a link for that here."
     assert result.outcome == "ok"
     assert result.supervisor == "retried"
-    assert result.supervisor_blocked == ["blocked_url: https://www.sierraoutfitters.com/hiking-boots"]
+    assert result.supervisor_blocked == ["blocked_url: https://www.switchbackoutfitters.com/hiking-boots"]
     # The model saw a correction note in place of its bad draft; the draft never reaches history.
     retry_messages = llm.seen_messages[1]
-    assert retry_messages[-1]["role"] == "system" and "sierraoutfitters.com" in retry_messages[-1]["content"]
+    assert retry_messages[-1]["role"] == "system" and "switchbackoutfitters.com" in retry_messages[-1]["content"]
     assert all(BAD_LINK not in str(m.get("content")) for m in agent.messages)
 
 
 def test_supervisor_falls_back_after_second_block_and_rolls_back():
-    agent = Agent(FakeLLM(text(BAD_LINK), text("Try sierraoutfitters.com/boots")), skills=[])
+    agent = Agent(FakeLLM(text(BAD_LINK), text("Try switchbackoutfitters.com/boots")), skills=[])
     before = list(agent.messages)
     result = agent.respond("boots?")
 

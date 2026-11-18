@@ -122,12 +122,12 @@ def test_inside_window_invalid_email():
 
 # --- supervision of codes (D-47) ---
 
-@pytest.mark.parametrize("text", ["EARLYRISER-7KQ2XM", "EARLYBIRD10", "EARLY-RISERS-2026", "SIERRA10"])
+@pytest.mark.parametrize("text", ["EARLYRISER-7KQ2XM", "EARLYBIRD10", "EARLY-RISERS-2026", "SWITCHBACK10"])
 def test_code_pattern_catches_real_and_lookalike_codes(text):
     assert CODE_PATTERN.search(f"Use {text} at checkout")
 
 
-@pytest.mark.parametrize("text", ["the Early Risers promotion", "Sierra Outfitters", "EARLY RISERS runs 8-10", "#W001"])
+@pytest.mark.parametrize("text", ["the Early Risers promotion", "Switchback Outfitters", "EARLY RISERS runs 8-10", "#W001"])
 def test_code_pattern_ignores_prose(text):
     assert not CODE_PATTERN.search(text)
 
@@ -196,10 +196,10 @@ def test_quoted_customer_code_retry_then_code_fallback(deps):
     from agent.skills import early_risers
     from tests.fakes import FakeLLM, text
 
-    llm = FakeLLM(text("Yes, SIERRA10 is valid!"), text("SIERRA10 should work at checkout."))
+    llm = FakeLLM(text("Yes, SWITCHBACK10 is valid!"), text("SWITCHBACK10 should work at checkout."))
     agent = Agent(llm, skills=[early_risers.build(deps)])
     before = list(agent.messages)
-    result = agent.respond("Is SIERRA10 a valid code?")
+    result = agent.respond("Is SWITCHBACK10 a valid code?")
 
     assert "Do not repeat codes the customer typed" in llm.seen_messages[1][-1]["content"]
     assert result.reply == CODE_GUARD.fallback
@@ -213,6 +213,6 @@ def test_quoted_customer_code_retry_can_succeed(deps):
     from tests.fakes import FakeLLM, text
 
     fixed = "I can't verify discount codes. You can get a real Early Risers code between 8:00 and 10:00 AM Pacific."
-    agent = Agent(FakeLLM(text("SIERRA10 is valid!"), text(fixed)), skills=[early_risers.build(deps)])
-    result = agent.respond("Is SIERRA10 a valid code?")
+    agent = Agent(FakeLLM(text("SWITCHBACK10 is valid!"), text(fixed)), skills=[early_risers.build(deps)])
+    result = agent.respond("Is SWITCHBACK10 a valid code?")
     assert result.reply == fixed and result.supervisor == "retried"

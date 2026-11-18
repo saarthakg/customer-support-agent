@@ -45,7 +45,7 @@ def test_blank_lines_are_skipped_and_eof_exits_cleanly(run_cli):
     code, out, llm = run_cli(["", "   ", "hello", EOFError()], text("Hi there!"))
     assert code == 0
     assert len(llm.seen_messages) == 1  # only "hello" reached the model
-    assert "Sierra: Hi there!" in out and out.rstrip().endswith("Happy trails! 🌲")
+    assert "Switchback: Hi there!" in out and out.rstrip().endswith("Happy trails! 🌲")
 
 
 @pytest.mark.parametrize("word", ["exit", "QUIT", "bye"])

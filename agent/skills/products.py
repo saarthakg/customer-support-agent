@@ -75,7 +75,7 @@ def build(deps: Deps) -> Skill:
             Tool(
                 name="list_products",
                 description=(
-                    "Return the full Sierra Outfitters catalog: name, SKU, description, inventory and a low_stock "
+                    "Return the full Switchback Outfitters catalog: name, SKU, description, inventory and a low_stock "
                     "flag for every product. The ONLY source of product facts; descriptions are authoritative. "
                     "Call it FIRST whenever the customer mentions gear, shopping or a planned activity, even "
                     "vaguely, before recommending or asking any clarifying question."
