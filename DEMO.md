@@ -50,7 +50,7 @@ Expect the same generic "couldn't find an order matching that email and order nu
 Expect `→ list_products({})` *before* any question, then Crain's Summit Pro X Skis with a reason from its description.
 
 **Unhappy path: something we don't carry.** Type: `interested in hiking boots`, then `10.5 US`
-Expect "We don't carry hiking boots", with no invented products, no link, no price, no substitute framing, and an honest "no size information" for 10.5.
+Expect "We don't carry hiking boots", with no invented products, no link, no price, no substitute framing, and no size claim for 10.5 (it says it can't help by size).
 
 *Talking point:* open `docs/before_grounding.md`. The same conversation, before grounding, invented three boots, a size, prices and a `switchbackoutfitters.com` link. That exhibit drove the supervisor and two regression scenarios.
 
@@ -82,7 +82,7 @@ for t in 07:59 08:00 09:59 10:00; do
     python -m agent.main --now 2026-11-03T$t | grep -E "Switchback:|EARLYRISER" | tail -2
 done
 ```
-Expect no code at 7:59, a code at 8:00 and 9:59, and no code at 10:00.
+Expect no code at 7:59, a code at 8:00 and 9:59 (the same code both times: same email, same Pacific day), and no code at 10:00.
 
 *Talking point:* the model is never told the time, only a code-computed fact (OPEN or CLOSED) each turn. Eligibility, the code and idempotency are all in `early_risers.py`, and its tests cover 7:59:59, 8:00, 9:59:59, 10:00 and DST.
 

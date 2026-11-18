@@ -99,7 +99,7 @@ The headline decisions are below. All 75 entries, each with the alternative cons
 
 | Decision | Alternative considered | Why |
 |---|---|---|
-| **Hand-rolled loop over Chat Completions** (D-04) | an agent SDK (banned), or the Responses API with server-held state | The whole conversation is a Python list we can print, trace and explain line by line. `llm.py` is the only file that knows the wire format (D-30), so swapping providers is a one-file change. |
+| **Hand-rolled loop over Chat Completions** (D-04) | an agent SDK, or the Responses API with server-held state | The whole conversation is a Python list we can print, trace and explain line by line. `llm.py` is the only file that knows the wire format (D-30), so swapping providers is a one-file change. |
 | **Single agent, workflow-shaped** | multi-agent / planner–executor | Three known journeys. The model's autonomy is limited to choosing tools and phrasing. More agents would add failure modes without adding capability. |
 | **Skills as the unit of extension** (D-05, D-40) | decorators / plugin discovery | Explicit dependencies (`Deps`: data, clock, code store, handoff log) that tests can replace; one visible list of what's enabled. |
 | **Grounding is enforced, not requested: the before/after exhibit** (D-36, [docs/before_grounding.md](docs/before_grounding.md)) | trust the prompt | With no tools, the model invented three boot products, size availability, prices and a `switchbackoutfitters.com` link, and every turn was traced as `"ok"`. That exhibit drove the explicit never-invent rule, the supervisor, the `supervisor` trace field, and two regression scenarios. |
@@ -125,8 +125,8 @@ Live runs against `gpt-4.1-mini`. Every number is from a real run, failures incl
 
 | Run | Result |
 |---|---|
-| **Full suite (32 scenarios), k=2, final prompt** (first run of each is [docs/transcripts.md](docs/transcripts.md)) | **31/32 pass^2, 62/64 runs (97%).** The one miss is `order_non_english` (below). |
-| Same suite before this round's fixes (previous commit, 30 scenarios), k=2 | 26/30 pass^2, 55/60 runs (92%): returns link 0/2, error-order 1/2, cancellation 1/2, playful-product voice 1/2 |
+| **Full suite (32 scenarios), k=2, final prompt** (first run of each is [docs/transcripts.md](docs/transcripts.md)) | **31/32 pass^2, 62/64 runs (97%)**, in each of two separate full runs. The one miss is `order_non_english` (below). |
+| Same suite before the hardening round (D-69 to D-75; 30 scenarios then), k=2 | 26/30 pass^2, 55/60 runs (92%): returns link 0/2, error-order 1/2, cancellation 1/2, playful-product voice 1/2 |
 | `trust_no_invented_returns_link`, k=5 | **5/5** after D-69 (was 0/5) |
 | `order_error_escalates`, k=5 | **5/5** after D-70 (was 4/5; about 6/8 historically) |
 | `order_non_english`, final prompt | **2/7** (2/5, then 0/2). Not reliable; see Known limitations. |
@@ -135,7 +135,7 @@ Live runs against `gpt-4.1-mini`. Every number is from a real run, failures incl
 | Boots, repeated-question and vague-gear scenarios, k=5, before D-64 | 5/5 each |
 
 **Known flakes, observed and not chased:**
-- `product_playful_presented_earnestly`: occasionally the reply has no emoji, so only the voice check fails. Content is correct. (1/2 at the start of this round, 2/2 at the end.)
+- `product_playful_presented_earnestly`: occasionally the reply has no emoji, so only the voice check fails. Content is correct. (1/2 before the hardening round, 2/2 after.)
 - `order_mismatch_lockout_escalates`: once, the model missed the order number in "check order W002, my email is …" and asked for it again. 4/4 on re-measurement, 2/2 in the final run.
 - **Order number before the email in one phrase** ("can you check W004 for bob.brown@example.com"): in a rehearsal the agent looked the order up on the first turn only 5/10 times, and in a failing run it asked again for the email it had just been given. The same details as `bob.brown@example.com, W004` went 10/10. No scenario uses that phrasing yet, so the suite didn't catch it.
 - *Resolved:* the "just to confirm your email and order number?" detour before the error-order lookup (D-70), the missing handoff offer for a returns link (D-69), the promo email-first habit (D-64), customer-typed codes ending in a generic fallback (D-67), and cancellations without a handoff offer (D-68).
@@ -150,7 +150,7 @@ Model retries and timeouts use the openai client's built-in exponential backoff.
 
 ## Known limitations
 
-- **Non-English replies are unreliable** (`order_non_english`, 2/7). The policy is to reply in the customer's language (D-74), but tool results are in English and they usually pull the reply into English. Everything else still works in any language: lookups, links and codes are language-neutral. The fix is code-side (tools return customer-facing text in the conversation's language, or a language fact computed in code), which was over this round's time budget.
+- **Non-English replies are unreliable** (`order_non_english`, 2/7). The policy is to reply in the customer's language (D-74), but tool results are in English and they usually pull the reply into English. Everything else still works in any language: lookups, links and codes are language-neutral. The fix is code-side (tools return customer-facing text in the conversation's language, or a language fact computed in code), which was over the hardening round's time budget.
 - **The order-lookup lockout is a demo control, not rate limiting.** After 3 failed lookups (failures, not attempts), the agent stops looking up orders *in that chat* and offers a handoff. It lives in process memory, so a new session resets it. Real protection needs server-side, per-identity, time-windowed limits (D-13, D-42).
 - **One person with several emails can get several promo codes.** Email is the only identity available. Production would key on an authenticated account (D-22).
 - **The supervisor only sees what a regex can see.** Prose like "check our website" names no URL and passes. It's tracked as a scenario check, not blocked.

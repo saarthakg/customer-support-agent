@@ -4,7 +4,7 @@ This is the reasoning behind the agent: the customer problem, every assumption, 
 
 ## 1. The customer problem
 
-Switchback Outfitters is a fictional young outdoor retailer. It is new to generative AI and is heading into peak season, when inbound contacts and product issues both rise. The first agent has to take routine volume (where's my order, what should I buy, is there a deal) off the support team without creating new problems: no wrong answers about orders, no invented products or links, no discount codes handed out by mistake.
+Switchback Outfitters is a fictional outdoor retailer: young, new to generative AI, and heading into peak season, when inbound contacts and product issues both rise. The first agent has to take routine volume (where's my order, what should I buy, is there a deal) off the support team without creating new problems: no wrong answers about orders, no invented products or links, no discount codes handed out by mistake.
 
 What that implied for the design:
 - **Trust over coverage.** A customer told something false by the agent is worse than one handed to a person. So facts come only from tools, the supervisor blocks invented links, codes and ticket IDs (D-36, D-67), and anything the agent can't do ends in an honest handoff offer (D-16, D-68).
@@ -144,7 +144,7 @@ The system prompt is assembled by `agent/prompt.py` · `build_system_prompt` fro
 
 **Measured lessons:**
 - **Prompts don't ground; tools plus a check do** ([before_grounding.md](before_grounding.md), D-36). With no tools, the model invented three boot products, sizes, prices and a `switchbackoutfitters.com` link, and every turn was traced as `ok`. That produced the explicit never-invent rule, the supervisor, the `supervisor` trace field and two regression scenarios.
-- **Give the model a fact, not raw data** (D-64). With only the tool to tell it about the window, the model kept asking for an email first, then declining (5/6 outside the window). A code-computed OPEN/CLOSED line each turn took it to 6/6. This round used the same idea for orders: `identity_verified: true` in the lookup result (D-70).
+- **Give the model a fact, not raw data** (D-64). With only the tool to tell it about the window, the model kept asking for an email first, then declining (5/6 outside the window). A code-computed OPEN/CLOSED line each turn took it to 6/6. The hardening round used the same idea for orders: `identity_verified: true` in the lookup result (D-70).
 - **Skills share one prompt, so they aren't independent in behavior** (D-60). Adding Early Risers dropped an unrelated product scenario from 5/5 to 0/2. Every prompt change reruns the whole scenario suite.
 - **Fix the check when it disagrees with the principle, not the prompt** (D-52, D-54). Three scenario checks were flagging correct behavior; they were corrected rather than tuning the prompt toward them.
 
@@ -173,7 +173,7 @@ The system prompt is assembled by `agent/prompt.py` · `build_system_prompt` fro
 8. **Email-first flake → D-64.** The per-turn OPEN/CLOSED fact.
 9. **Trust scenarios.** Eight adversarial scenarios found three gaps (D-66).
 10. **Supervisor and scope.** Rejecting the looser supervisor led to D-67 (specific retry note and code-written fallback, 0/3 → 3/3). The scope split (D-68) fixed cancellation (0/3 → 3/3) but not the returns link.
-11. **This round.** The returns-link fix (D-69), the verified-identity fact (D-70), and an edge-case audit: input limits (D-71), tolerant normalization (D-72), corrupt-store recovery (D-73), reply language (D-74) and robustness fixes (D-75). Results are in the README's measured-behavior table.
+11. **Hardening round.** The returns-link fix (D-69), the verified-identity fact (D-70), and an edge-case audit: input limits (D-71), tolerant normalization (D-72), corrupt-store recovery (D-73), reply language (D-74) and robustness fixes (D-75). Results are in the README's measured-behavior table.
 
 ## 7. Trade-offs and technical debt
 
@@ -185,10 +185,10 @@ The system prompt is assembled by `agent/prompt.py` · `build_system_prompt` fro
 | One shared system prompt (D-60) | Simple, inspectable, one place to read behavior | A change in one skill can regress another; every prompt change needs the full live suite | Per-journey routing or smaller prompts once the skill count grows; keep the full suite as the gate |
 | Regex-only supervisor | Free, instant, deterministic, unit-tested | Prose hallucinations ("check our website's boots section") name no URL and pass | An LLM grader on replies against tool results and policy, for high-risk topics |
 | Simulated handoff (JSONL file) | Makes "I've passed this on" true without an external system | Nobody reads the file; no confirmation to the customer | A real queue (Zendesk, Salesforce) behind the same tool contract, with the transcript attached |
-| CLI only, one conversation per process | No UI was expected | No concurrency, no streaming | An HTTP service with per-session state |
+| CLI only, one conversation per process | A terminal shows every behavior that matters | No concurrency, no streaming | An HTTP service with per-session state |
 | Scenario runs cost real tokens and are small samples (k=2–5) | Cheap with gpt-4.1-mini; enough to see the shape of reliability | Rates are noisy; a few cents per full run | A user simulator and larger k tracked per release |
-| Reply language is prompt-only | One line, no new dependency | `order_non_english` measured 2/5: English tool results pull the reply into English | Return customer-facing text from tools in the conversation's language, or a per-turn language fact detected in code |
-| Remaining flakes | Reported rather than chased, per the time budget | Occasional misses: an unprompted check-in before the error-order lookup, a missing emoji on a happy path | Watch the rates per release; fix with code-side facts where possible |
+| Reply language is prompt-only | One line, no new dependency | `order_non_english` measured 2/7: English tool results pull the reply into English | Return customer-facing text from tools in the conversation's language, or a per-turn language fact detected in code |
+| Remaining flakes | Reported rather than chased, per the time budget | Occasional misses: a missing emoji on a happy path; "check W004 for <email>" sometimes re-asks for the email (5/10 first-turn lookups) | Watch the rates per release; fix with code-side facts where possible |
 | No conversation-length management | Demo conversations are short; gpt-4.1-mini has a large context | A very long chat grows cost per turn and would eventually fail with a fallback | Summarize or trim old turns |
 
 ## 8. If requirements changed

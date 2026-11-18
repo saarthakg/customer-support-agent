@@ -30,13 +30,14 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ### D-04 Chat Completions API with a hand-rolled loop · Accepted · ★ Headline
 - **Choice:** `client.chat.completions.create(..., tools=...)`. We own the `messages` list and run the loop: call → execute tool calls → append results → repeat, capped at N iterations per user turn.
-- **Alternative:** the Responses API (server-side state), or any agent SDK (banned).
+- **Alternative:** the Responses API (server-side state), or an agent SDK (ruled out: the point is to own the loop).
 - **Why:** the full conversation is a plain Python list we can print, trace, and explain line by line. Server-held state would hide the very thing we most need to inspect.
 
 ### D-05 Skill = instructions + tools; registry is one list · Accepted · ★ Headline
 - **Choice:** each `skills/<name>.py` exposes `build(deps) -> Skill`. `registry.py` holds `SKILL_BUILDERS = [orders.build, products.build, early_risers.build]`. The prompt and tool list are assembled from it. Adding a feature means one new file plus one line, and the loop never changes.
 - **Alternative:** module-level globals or decorator auto-discovery (a plugin system, more machinery than four skills need).
 - **Why:** dependencies (datasets, clock, code store) are explicit and injectable for tests, and registration is visible in one place.
+- **Amended by D-40:** the list moved to `agent/skills/__init__.py`.
 
 ### D-06 Single `list_products` tool, no `get_product` · Accepted
 - **Choice:** one tool that returns the compact catalog (10 items).
@@ -44,7 +45,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Why:** with 10 items, `get_product` duplicates data `list_products` already returns. It's a natural next extension (e.g. an inventory-check skill), not core.
 
 ### D-07 Status meanings live in code · Accepted
-- **Choice:** a `STATUS_INFO` dict in `skills/orders.py` maps each of the four statuses to a factual customer-facing meaning, and the tool returns it. *How* to say it (empathy, emoji rules) lives in the journey spec.
+- **Choice:** a `STATUS_MEANINGS` dict in `skills/orders.py` maps each of the four statuses to a factual customer-facing meaning, and the tool returns it. *How* to say it (empathy, emoji rules) lives in the journey spec.
 - **Alternative:** let the model interpret `fulfilled` / `error` itself.
 - **Why:** the model would improvise different meanings each run. Customer-facing status meanings should be defined once, in code.
 
@@ -62,7 +63,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 ### D-10 Dataclasses, not pydantic · Accepted
 - **Choice:** `dataclasses` for records and skills, with plain dicts for tool results (they're JSON anyway).
 - **Alternative:** pydantic.
-- **Why:** pydantic isn't in the approved dependency list.
+- **Why:** dependencies are deliberately limited to `openai`, `python-dotenv` and `pytest`, and the standard library covers this.
 
 ---
 
@@ -81,7 +82,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 ### D-13 Cap failed lookups per session · Accepted
 - **Choice:** after 3 failed lookups in a session, the tool returns `too_many_attempts`. The agent stops retrying and *offers escalation* (D-16) instead of hitting a dead end.
 - **Alternative:** rely on the prompt, or no cap.
-- **Why:** the order space is tiny (`W001`–`W010`) and emails are guessable. A prompt can be talked out of a limit, a counter can't. It's about five lines and a good trust talking point.
+- **Why:** the order space is tiny (`W001`–`W010`) and emails are guessable. A prompt can be talked out of a limit, a counter can't, and it's about five lines.
 
 ### D-14 `fulfilled` = packed, not yet handed to the carrier · Accepted
 - **Choice:** "Your order is packed and getting ready to ship. Tracking isn't available yet; it'll appear once the carrier has it." No link, and no date promised.
@@ -137,6 +138,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 - **Choice:** the format is `EARLYRISER-XXXXXX` from `secrets.choice` over an alphabet without ambiguous characters (no 0/O/1/I/L), re-drawn on collision. Asking again the same PT day returns the same code (`already_issued: true`). A new day gives a new code. Codes live behind a small `CodeStore` interface, with an in-memory implementation.
 - **Alternative:** one code per user forever, or a JSON-file store.
 - **Why:** time and codes are computed and testable in code. In-memory means idempotency is per process, which is honest for a demo and stated as a limitation. A persistent store is a one-class swap.
+- **Amended by D-61:** the CLI now uses a JSON-backed store, so codes survive restarts.
 
 ### D-24 Code terms are not invented · Accepted
 - **Choice:** the tool returns only `code` and `discount_percent: 10`. The agent states no expiry, minimum, exclusions, or how to apply it beyond "use it at checkout".
@@ -178,7 +180,7 @@ Entries were written as the work happened, in build order: planning, the core lo
 
 ### D-31 Exact dependency pins · Accepted
 - **Choice:** `openai==3.42.1`, `python-dotenv==1.2.4`, `pytest==9.2.0`, the versions tested.
-- **Why:** the demo must run first try on the day. A floating `openai` could change the client surface under us.
+- **Why:** the demo must run first try. A floating `openai` could change the client surface under us.
 
 ### D-32 The JSON files are the source of truth · Accepted
 - **Choice:** `data/*.json` is edited directly; there is no extraction step. The agent validates both files at startup (D-75).
@@ -439,7 +441,7 @@ Baseline for this round: the previous commit, rerun at k=2 on all 30 scenarios. 
 - **Found (edge-case audit):** nothing said what to do with a non-English message. A Spanish order question got an English answer every time (0/5).
 - **Choice:** a VOICE line: reply in the language of the customer's latest message. Tool results are in English, so translate the facts but keep product names, links, codes and ticket IDs exactly as returned. The escalation spec says ticket summaries are in English, because the support team reads them. New scenario `order_non_english`.
 - **Alternative:** English only, with a polite note. That's simpler, but turns away customers the model could serve.
-- **Result: not reliable.** The first wording, in the global rules, stayed 0/5. Moved to the top of VOICE and made explicit about translating tool facts: 2/5, then 0/2 in the full run. The English tool results pull the reply into English. Per the one-fix rule, this is reported, not chased. The proper fix (tools return customer-facing text in the conversation's language, or a language fact computed in code) is more than this round's budget. It's listed in the README's known limitations and the design notes. Keeping the rule costs nothing, and it doesn't regress other scenarios (31/32 in the full run).
+- **Result: not reliable.** The first wording, in the global rules, stayed 0/5. Moved to the top of VOICE and made explicit about translating tool facts: 2/5, then 0/2 in the full run. The English tool results pull the reply into English. The round allowed one fix attempt per regression before reporting it, so this is reported, not chased. The proper fix (tools return customer-facing text in the conversation's language, or a language fact computed in code) was more than this round's time budget. It's listed in the README's known limitations and the design notes. Keeping the rule costs nothing, and it doesn't regress other scenarios (31/32 in the full run).
 - **Policy flag:** reply language is a product decision.
 
 ### D-75 Remaining edge-case fixes · Accepted
